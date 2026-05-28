@@ -16,22 +16,16 @@ st.set_page_config(page_title='Дашборд', page_icon='📊', layout='wide')
 st.title('📊 Дашборд')
 
 
-# ── Загрузка данных ────────────────────────────────────────────────────────────
-@st.cache_data(ttl=300)
-def load_all():
-    exp = load_expenses()
-    rev = load_revenue()
-    sal = load_salaries()
-    return exp, rev, sal
-
-
 def fmt(val):
     if val >= 1_000_000:
         return f'{val/1_000_000:.1f} млн ₽'
     return f'{val:,.0f} ₽'.replace(',', ' ')
 
 
-exp_df, rev_df, sal_df = load_all()
+# Загружаем напрямую — чтобы сброс кэша в load_expenses/revenue/salaries работал сразу
+exp_df = load_expenses()
+rev_df = load_revenue()
+sal_df = load_salaries()
 
 if exp_df.empty and rev_df.empty:
     st.info('Данных пока нет. Загрузи реестры платежей и введи доходы.')
