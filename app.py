@@ -1,8 +1,11 @@
 import streamlit as st
+from PIL import Image
+
+_icon = Image.open('assets/logo.png')
 
 st.set_page_config(
     page_title='SMSTRETCHING — Бюджет',
-    page_icon='💪',
+    page_icon=_icon,
     layout='wide',
     initial_sidebar_state='expanded',
 )
