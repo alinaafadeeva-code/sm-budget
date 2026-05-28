@@ -4,6 +4,7 @@ from datetime import datetime
 from .mappings import (
     STUDIO_CODES, STUDIO_ALIASES, ENTITY_STUDIOS, STUDIO_ENTITY,
     GENERAL_ENTITY, GENERAL_NETWORK, OCCUPANCY_STUDIOS,
+    AUTO_DISTRIBUTE_CATEGORIES,
 )
 
 
@@ -187,6 +188,10 @@ def apply_occupancy(transactions: list[dict], occupancy: dict) -> list[dict]:
 
     for t in transactions:
         studio = t['studio']
+
+        # Статьи 44 и 45 (налоги) всегда делятся по всей сети
+        if t.get('category_code') in AUTO_DISTRIBUTE_CATEGORIES:
+            studio = GENERAL_NETWORK
 
         if studio not in ('', GENERAL_ENTITY, GENERAL_NETWORK):
             result.append(t)
