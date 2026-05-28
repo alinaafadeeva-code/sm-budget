@@ -20,11 +20,27 @@ def parse_amount(val) -> float:
         return 0.0
 
 
+def _parse_single_studio(upper: str):
+    """Возвращает код студии или None если не распознано."""
+    if upper in STUDIO_CODES:
+        return upper
+    if upper in STUDIO_ALIASES:
+        return STUDIO_ALIASES[upper]
+    for alias, code in STUDIO_ALIASES.items():
+        if alias in upper:
+            return code
+    for code in STUDIO_CODES:
+        if code in upper:
+            return code
+    return None
+
+
 def normalize_studio(raw: str) -> str:
     """
     Приводит комментарий к стандартному коду студии.
     Возвращает:
       - код студии (ПК1, ЧП, …)
+      - 'ПМ|ЧП'     — несколько студий через | → делить по заполняемости между ними
       - 'ОБЩ'       — делить по юрлицу
       - 'ОБЩ СЕТЬ'  — делить по всей сети
       - ''           — пустое → будет трактоваться как ОБЩ
@@ -36,18 +52,28 @@ def normalize_studio(raw: str) -> str:
         return GENERAL_NETWORK
     if upper == GENERAL_ENTITY.upper():
         return GENERAL_ENTITY
-    if upper in STUDIO_CODES:
-        return upper
-    if upper in STUDIO_ALIASES:
-        return STUDIO_ALIASES[upper]
-    # Попробуем найти совпадение внутри строки
-    for alias, code in STUDIO_ALIASES.items():
-        if alias in upper:
-            return code
-    for code in STUDIO_CODES:
-        if code in upper:
-            return code
-    return upper  # вернём как есть, разберёмся в логах
+
+    # Сначала ищем несколько студий — это важно делать ДО одиночного поиска,
+    # чтобы подстрочный поиск ('ЧП' в 'ПМ И ЧП') не давал ложный результат
+    parts = re.split(r'[,/\+]|\s+И\s+|\s+', upper)
+    parts = [p.strip() for p in parts if p.strip() and p.strip() != 'И']
+    if len(parts) > 1:
+        found = []
+        for part in parts:
+            code = _parse_single_studio(part)
+            if code and code not in found:
+                found.append(code)
+        if len(found) > 1:
+            return '|'.join(found)  # например 'ПМ|ЧП'
+        if len(found) == 1:
+            return found[0]
+
+    # Проверяем одиночный код (точное совпадение, потом подстрока)
+    single = _parse_single_studio(upper)
+    if single:
+        return single
+
+    return upper  # вернём как есть
 
 
 def detect_entity(filename: str):
@@ -193,6 +219,29 @@ def apply_occupancy(transactions: list[dict], occupancy: dict) -> list[dict]:
         if t.get('category_code') in AUTO_DISTRIBUTE_CATEGORIES:
             studio = GENERAL_NETWORK
 
+        # Несколько студий через | → делим по заполняемости между ними
+        if '|' in studio:
+            target_studios = studio.split('|')
+            total_visits = sum(occupancy.get(s, 0) for s in target_studios)
+            if total_visits == 0:
+                # Нет данных заполняемости — делим поровну
+                share = round(t['amount'] / len(target_studios), 2)
+                for s in target_studios:
+                    new_t = dict(t)
+                    new_t['studio'] = s
+                    new_t['amount'] = share
+                    result.append(new_t)
+            else:
+                for s in target_studios:
+                    visits = occupancy.get(s, 0)
+                    if visits <= 0:
+                        continue
+                    new_t = dict(t)
+                    new_t['studio'] = s
+                    new_t['amount'] = round(t['amount'] * visits / total_visits, 2)
+                    result.append(new_t)
+            continue
+
         if studio not in ('', GENERAL_ENTITY, GENERAL_NETWORK):
             result.append(t)
             continue
@@ -207,7 +256,6 @@ def apply_occupancy(transactions: list[dict], occupancy: dict) -> list[dict]:
 
         total_visits = sum(occupancy.get(s, 0) for s in target_studios)
         if total_visits == 0:
-            # Заполняемость не введена — оставляем как есть
             result.append(t)
             continue
 
