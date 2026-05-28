@@ -45,7 +45,7 @@ def normalize_studio(raw: str) -> str:
       - 'ОБЩ СЕТЬ'  — делить по всей сети
       - ''           — пустое → будет трактоваться как ОБЩ
     """
-    if not raw or str(raw).strip().lower() in ('nan', ''):
+    if not raw or str(raw).strip().lower() in ('nan', '', '0'):
         return ''
     upper = str(raw).strip().upper()
     if upper == GENERAL_NETWORK.upper():
