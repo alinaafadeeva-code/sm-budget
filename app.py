@@ -1,13 +1,13 @@
 import streamlit as st
 
 st.set_page_config(
-    page_title='SM Stretching — Бюджет',
+    page_title='SMSTRETCHING — Бюджет',
     page_icon='💪',
     layout='wide',
     initial_sidebar_state='expanded',
 )
 
-st.title('💪 SM Stretching — Бюджет 2026')
+st.title('💪 SMSTRETCHING — Бюджет 2026')
 st.markdown('''
 Добро пожаловать в систему управления бюджетом **SMSTRETCHING / СМ Групп**.
 
