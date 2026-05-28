@@ -279,11 +279,15 @@ with tab4:
         pivot['ИТОГО'] = pivot.sum(axis=1)
         pivot = pivot.sort_values('ИТОГО', ascending=False)
 
-        # Форматируем числа
-        styled = pivot.style.format('{:,.0f}'.replace(',', ' ')).background_gradient(
-            cmap='Reds', subset=[c for c in pivot.columns if c != 'ИТОГО']
-        )
-        st.dataframe(styled, use_container_width=True, height=500)
+        # Форматируем числа с пробелом как разделителем тысяч
+        fmt_fn = lambda x: f'{x:,.0f}'.replace(',', ' ')
+        try:
+            styled = pivot.style.format(fmt_fn).background_gradient(
+                cmap='Reds', subset=[c for c in pivot.columns if c != 'ИТОГО']
+            )
+            st.dataframe(styled, use_container_width=True, height=500)
+        except Exception:
+            st.dataframe(pivot.applymap(fmt_fn), use_container_width=True, height=500)
     else:
         st.info('Нет данных о расходах')
 
@@ -299,7 +303,9 @@ with tab4:
             values='amount', aggfunc='sum', fill_value=0,
         )
         pivot2['ИТОГО'] = pivot2.sum(axis=1)
-        st.dataframe(
-            pivot2.style.format('{:,.0f}'.replace(',', ' ')).background_gradient(cmap='Greens'),
-            use_container_width=True,
-        )
+        fmt_fn2 = lambda x: f'{x:,.0f}'.replace(',', ' ')
+        try:
+            styled2 = pivot2.style.format(fmt_fn2).background_gradient(cmap='Greens')
+            st.dataframe(styled2, use_container_width=True)
+        except Exception:
+            st.dataframe(pivot2.applymap(fmt_fn2), use_container_width=True)

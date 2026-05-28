@@ -94,7 +94,24 @@ def load_revenue() -> pd.DataFrame:
 # ─── Зарплаты ─────────────────────────────────────────────────────────────────
 
 def save_salaries(records: list[dict]):
+    """Сохраняет зарплаты за месяц, заменяя старые записи за тот же период."""
     ws = _get_or_create_sheet(SH_SALARIES, SALARY_HEADERS)
+    if not records:
+        return
+    year  = records[0]['year']
+    month = records[0]['month']
+
+    # Удаляем существующие записи за этот год/месяц
+    df = _sheet_to_df(SH_SALARIES, SALARY_HEADERS)
+    if not df.empty:
+        mask = (df['year'].astype(str) == str(year)) & (df['month'].astype(str) == str(month))
+        if mask.any():
+            ws.clear()
+            ws.append_row(SALARY_HEADERS)
+            keep = df[~mask]
+            if not keep.empty:
+                ws.append_rows(keep.values.tolist(), value_input_option='RAW')
+
     rows = [[r.get(h, '') for h in SALARY_HEADERS] for r in records]
     ws.append_rows(rows, value_input_option='RAW')
 
