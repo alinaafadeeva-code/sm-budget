@@ -63,53 +63,101 @@ def detect_entity(filename: str):
     return None
 
 
+def _detect_format(df: pd.DataFrame) -> dict:
+    """
+    Определяет формат реестра по заголовкам и возвращает индексы колонок.
+    Короткий формат (7 колонок): №, Дата, Сумма, Информация, Назначение, Студия, Статья
+    Банковский формат (13 колонок): №, Дата, Документ, Номер, Сумма, ..., Студия, Статья
+    """
+    # Ищем строку с заголовками
+    for row_idx in range(min(5, len(df))):
+        row_vals = [str(v).strip().lower() for v in df.iloc[row_idx]]
+        if 'сумма' in row_vals or 'дата' in row_vals:
+            headers = [str(v).strip() for v in df.iloc[row_idx]]
+            h_lower = [h.lower() for h in headers]
+
+            def find(keywords):
+                for kw in keywords:
+                    for i, h in enumerate(h_lower):
+                        if kw in h:
+                            return i
+                return None
+
+            return {
+                'header_row': row_idx,
+                'col_date':   find(['дата']),
+                'col_amount': find(['сумма']),
+                'col_desc':   find(['назначение']),
+                'col_studio': find(['студия', 'комментарий']),
+                'col_cat':    find(['статья']),
+            }
+
+    # Если заголовки не найдены — угадываем по количеству колонок
+    ncols = df.shape[1]
+    if ncols <= 8:
+        # Короткий формат: №, Дата, Сумма, Инфо, Назначение, Студия, Статья
+        return {'header_row': None, 'col_date': 1, 'col_amount': 2,
+                'col_desc': 4, 'col_studio': 5, 'col_cat': 6}
+    else:
+        # Банковский формат
+        return {'header_row': None, 'col_date': 1, 'col_amount': 4,
+                'col_desc': 6, 'col_studio': 11, 'col_cat': 12}
+
+
 def process_registry(file_obj, entity: str) -> list[dict]:
     """
     Читает Excel-реестр и возвращает список транзакций.
-    Каждая транзакция: {date, year, month, entity, studio, category_code, amount, description}
-    studio может быть: код студии | 'ОБЩ' | 'ОБЩ СЕТЬ' | '' (трактуем как ОБЩ)
+    Поддерживает два формата: короткий (7 колонок) и банковский (13 колонок).
     """
     df = pd.read_excel(file_obj, header=None, dtype=str)
+    fmt = _detect_format(df)
     transactions = []
 
-    for _, row in df.iterrows():
+    for row_idx, (_, row) in enumerate(df.iterrows()):
+        # Пропускаем строку заголовков
+        if fmt['header_row'] is not None and row_idx == fmt['header_row']:
+            continue
+
         val0 = str(row.iloc[0]).strip()
 
         # Пропускаем строки-заголовки и итоги
         if val0.lower() in ('nan', '', '№ п/п', 'итого', '№'):
             continue
 
-        # Строка с данными — первая колонка должна быть числом (порядковый номер)
+        # Строка с данными — первая колонка должна быть числом
         try:
             int(float(val0))
         except (ValueError, TypeError):
             continue
 
         # Дата
-        date_raw = row.iloc[1]
+        date_raw = row.iloc[fmt['col_date']] if fmt['col_date'] is not None else None
         try:
             date = pd.to_datetime(date_raw)
         except Exception:
             continue
 
-        # Сумма (колонка 4)
-        amount = parse_amount(row.iloc[4])
+        # Сумма
+        amount = parse_amount(row.iloc[fmt['col_amount']]) if fmt['col_amount'] is not None else 0
         if amount <= 0:
             continue
 
-        # Комментарий / студия (колонка 11)
-        comment_raw = str(row.iloc[11]).strip() if len(row) > 11 else ''
+        # Студия
+        col_s = fmt['col_studio']
+        comment_raw = str(row.iloc[col_s]).strip() if col_s is not None and col_s < len(row) else ''
         studio = normalize_studio(comment_raw)
 
-        # Статья (последняя значимая колонка — 12)
-        cat_raw = row.iloc[12] if len(row) > 12 else None
+        # Статья
+        col_c = fmt['col_cat']
+        cat_raw = row.iloc[col_c] if col_c is not None and col_c < len(row) else None
         try:
             category_code = int(float(str(cat_raw)))
         except (ValueError, TypeError):
             category_code = None
 
-        # Описание (назначение платежа — колонка 6)
-        description = str(row.iloc[6]).strip() if len(row) > 6 else ''
+        # Описание
+        col_d = fmt['col_desc']
+        description = str(row.iloc[col_d]).strip() if col_d is not None and col_d < len(row) else ''
         if description.lower() == 'nan':
             description = ''
 
