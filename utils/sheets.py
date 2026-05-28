@@ -55,7 +55,31 @@ def _sheet_to_df(name: str, headers: list[str]) -> pd.DataFrame:
 # ─── Расходы ──────────────────────────────────────────────────────────────────
 
 def save_expenses(records: list[dict]):
+    """Сохраняет расходы, заменяя старые записи за то же юрлицо + год + месяц."""
     ws = _get_or_create_sheet(SH_EXPENSES, EXPENSE_HEADERS)
+    if not records:
+        return
+
+    # Собираем уникальные (entity, year, month) из новых записей
+    keys = {(r['entity'], r['year'], r['month']) for r in records}
+
+    # Удаляем существующие записи с теми же ключами
+    df = _sheet_to_df(SH_EXPENSES, EXPENSE_HEADERS)
+    if not df.empty:
+        mask = pd.Series([False] * len(df))
+        for entity, year, month in keys:
+            mask |= (
+                (df['entity'].astype(str) == str(entity)) &
+                (df['year'].astype(str) == str(year)) &
+                (df['month'].astype(str) == str(month))
+            )
+        if mask.any():
+            ws.clear()
+            ws.append_row(EXPENSE_HEADERS)
+            keep = df[~mask]
+            if not keep.empty:
+                ws.append_rows(keep.values.tolist(), value_input_option='RAW')
+
     rows = [[r.get(h, '') for h in EXPENSE_HEADERS] for r in records]
     ws.append_rows(rows, value_input_option='RAW')
 
