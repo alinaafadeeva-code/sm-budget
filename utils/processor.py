@@ -147,13 +147,13 @@ def process_registry(file_obj, entity: str) -> list[dict]:
         comment_raw = str(row.iloc[col_s]).strip() if col_s is not None and col_s < len(row) else ''
         studio = normalize_studio(comment_raw)
 
-        # Статья
+        # Статья (пустое поле = 0, т.е. "без статьи, не разносить")
         col_c = fmt['col_cat']
         cat_raw = row.iloc[col_c] if col_c is not None and col_c < len(row) else None
         try:
             category_code = int(float(str(cat_raw)))
         except (ValueError, TypeError):
-            category_code = None
+            category_code = 0
 
         # Описание
         col_d = fmt['col_desc']
