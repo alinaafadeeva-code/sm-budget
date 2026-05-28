@@ -281,7 +281,9 @@ with tab4:
             )
             st.dataframe(styled, use_container_width=True, height=500)
         except Exception:
-            st.dataframe(pivot.applymap(fmt_fn), use_container_width=True, height=500)
+            # pandas 2.1+ переименовал applymap → map
+            _map = getattr(pivot, 'map', None) or pivot.applymap
+            st.dataframe(_map(fmt_fn), use_container_width=True, height=500)
     else:
         st.info('Нет данных о расходах')
 
@@ -302,4 +304,5 @@ with tab4:
             styled2 = pivot2.style.format(fmt_fn2).background_gradient(cmap='Greens')
             st.dataframe(styled2, use_container_width=True)
         except Exception:
-            st.dataframe(pivot2.applymap(fmt_fn2), use_container_width=True)
+            _map2 = getattr(pivot2, 'map', None) or pivot2.applymap
+            st.dataframe(_map2(fmt_fn2), use_container_width=True)
