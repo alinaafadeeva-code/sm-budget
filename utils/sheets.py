@@ -34,7 +34,7 @@ def get_spreadsheet():
     return client.open_by_key(st.secrets['spreadsheet_id'])
 
 
-def _get_or_create_sheet(name: str, headers: list[str]):
+def _get_or_create_sheet(name: str, headers: list):
     ss = get_spreadsheet()
     try:
         ws = ss.worksheet(name)
@@ -44,7 +44,7 @@ def _get_or_create_sheet(name: str, headers: list[str]):
     return ws
 
 
-def _sheet_to_df(name: str, headers: list[str]) -> pd.DataFrame:
+def _sheet_to_df(name: str, headers: list) -> pd.DataFrame:
     ws = _get_or_create_sheet(name, headers)
     data = ws.get_all_records(expected_headers=headers)
     if not data:
@@ -54,7 +54,7 @@ def _sheet_to_df(name: str, headers: list[str]) -> pd.DataFrame:
 
 # ─── Расходы ──────────────────────────────────────────────────────────────────
 
-def save_expenses(records: list[dict]):
+def save_expenses(records: list):
     """Сохраняет расходы, заменяя старые записи за то же юрлицо + год + месяц."""
     ws = _get_or_create_sheet(SH_EXPENSES, EXPENSE_HEADERS)
     if not records:
@@ -84,7 +84,6 @@ def save_expenses(records: list[dict]):
     ws.append_rows(rows, value_input_option='RAW')
 
 
-@st.cache_data(ttl=300)
 def load_expenses() -> pd.DataFrame:
     df = _sheet_to_df(SH_EXPENSES, EXPENSE_HEADERS)
     if df.empty:
@@ -98,13 +97,12 @@ def load_expenses() -> pd.DataFrame:
 
 # ─── Доходы ───────────────────────────────────────────────────────────────────
 
-def save_revenue(records: list[dict]):
+def save_revenue(records: list):
     ws = _get_or_create_sheet(SH_REVENUE, REVENUE_HEADERS)
     rows = [[r.get(h, '') for h in REVENUE_HEADERS] for r in records]
     ws.append_rows(rows, value_input_option='RAW')
 
 
-@st.cache_data(ttl=300)
 def load_revenue() -> pd.DataFrame:
     df = _sheet_to_df(SH_REVENUE, REVENUE_HEADERS)
     if df.empty:
@@ -117,7 +115,7 @@ def load_revenue() -> pd.DataFrame:
 
 # ─── Зарплаты ─────────────────────────────────────────────────────────────────
 
-def save_salaries(records: list[dict]):
+def save_salaries(records: list):
     """Сохраняет зарплаты за месяц, заменяя старые записи за тот же период."""
     ws = _get_or_create_sheet(SH_SALARIES, SALARY_HEADERS)
     if not records:
@@ -140,7 +138,6 @@ def save_salaries(records: list[dict]):
     ws.append_rows(rows, value_input_option='RAW')
 
 
-@st.cache_data(ttl=300)
 def load_salaries() -> pd.DataFrame:
     df = _sheet_to_df(SH_SALARIES, SALARY_HEADERS)
     if df.empty:
@@ -167,10 +164,8 @@ def save_occupancy(year: int, month: int, occupancy: dict):
                 ws.append_rows(keep.values.tolist(), value_input_option='RAW')
     rows = [[year, month, studio, visits] for studio, visits in occupancy.items()]
     ws.append_rows(rows, value_input_option='RAW')
-    load_occupancy.clear()
 
 
-@st.cache_data(ttl=300)
 def load_occupancy() -> pd.DataFrame:
     df = _sheet_to_df(SH_OCCUPANCY, OCCUPANCY_HEADERS)
     if df.empty:
@@ -191,7 +186,5 @@ def get_occupancy_dict(year: int, month: int) -> dict:
 
 
 def clear_caches():
-    load_expenses.clear()
-    load_revenue.clear()
-    load_salaries.clear()
-    load_occupancy.clear()
+    """Оставлено для обратной совместимости — кэш убран, функция ничего не делает."""
+    pass
