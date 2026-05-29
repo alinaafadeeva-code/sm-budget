@@ -15,21 +15,6 @@ from utils.mappings import (
 st.set_page_config(page_title='Дашборд', page_icon='📊', layout='wide')
 st.title('📊 Дашборд')
 
-# ── ВРЕМЕННАЯ ДИАГНОСТИКА (удалить после решения) ─────────────────────────────
-with st.expander('🔍 Диагностика (временно)', expanded=False):
-    try:
-        _sid = st.secrets.get('spreadsheet_id', 'НЕ НАЙДЕН')
-        st.write(f"**spreadsheet_id в Cloud:** `{_sid}`")
-    except Exception as _e:
-        st.write(f"Ошибка чтения secrets: {_e}")
-    _raw = load_expenses()
-    st.write(f"**Строк в exp_df:** {len(_raw)}")
-    st.write(f"**Сумма amount (raw):** {_raw['amount'].sum() if not _raw.empty else 0:,.0f}")
-    if not _raw.empty:
-        st.write("**Первые 3 строки:**")
-        st.dataframe(_raw.head(3))
-# ─────────────────────────────────────────────────────────────────────────────
-
 
 def fmt(val):
     if val >= 1_000_000:
