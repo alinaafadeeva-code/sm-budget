@@ -46,7 +46,13 @@ def _get_or_create_sheet(name: str, headers: list):
 
 def _sheet_to_df(name: str, headers: list) -> pd.DataFrame:
     ws = _get_or_create_sheet(name, headers)
-    data = ws.get_all_records(expected_headers=headers)
+    # UNFORMATTED_VALUE — сырые числа без локального форматирования.
+    # Без этого gspread читает "2537,49" (рус. формат) и убирает запятую
+    # как разделитель тысяч → 253749 вместо 2537.49 (ошибка ×100).
+    data = ws.get_all_records(
+        expected_headers=headers,
+        value_render_option='UNFORMATTED_VALUE',
+    )
     if not data:
         return pd.DataFrame(columns=headers)
     return pd.DataFrame(data)
