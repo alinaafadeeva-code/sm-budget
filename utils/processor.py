@@ -53,8 +53,15 @@ def normalize_studio(raw: str) -> str:
     if upper == GENERAL_ENTITY.upper():
         return GENERAL_ENTITY
 
-    # Сначала ищем несколько студий — это важно делать ДО одиночного поиска,
-    # чтобы подстрочный поиск ('ЧП' в 'ПМ И ЧП') не давал ложный результат
+    # 1. Точное совпадение — важно проверить ДО разбивки по пробелам,
+    #    иначе 'БАР ТЛ' разобьётся на ['БАР','ТЛ'] и вернёт просто 'ТЛ'
+    if upper in STUDIO_CODES:
+        return upper
+    if upper in STUDIO_ALIASES:
+        return STUDIO_ALIASES[upper]
+
+    # 2. Несколько студий — разделители: запятая, слэш, +, "И", пробел
+    #    Пробел идёт последним, потому что точное совпадение уже проверено выше
     parts = re.split(r'[,/\+]|\s+И\s+|\s+', upper)
     parts = [p.strip() for p in parts if p.strip() and p.strip() != 'И']
     if len(parts) > 1:
@@ -68,7 +75,7 @@ def normalize_studio(raw: str) -> str:
         if len(found) == 1:
             return found[0]
 
-    # Проверяем одиночный код (точное совпадение, потом подстрока)
+    # 3. Подстрочный поиск (запасной вариант)
     single = _parse_single_studio(upper)
     if single:
         return single
