@@ -60,25 +60,22 @@ def normalize_studio(raw: str) -> str:
     if upper in STUDIO_ALIASES:
         return STUDIO_ALIASES[upper]
 
-    # 2. Несколько студий — разделители: запятая, слэш, +, "И", пробел
-    #    Пробел идёт последним, потому что точное совпадение уже проверено выше
-    parts = re.split(r'[,/\+]|\s+И\s+|\s+', upper)
-    parts = [p.strip() for p in parts if p.strip() and p.strip() != 'И']
-    if len(parts) > 1:
-        found = []
-        for part in parts:
-            code = _parse_single_studio(part)
-            if code and code not in found:
-                found.append(code)
-        if len(found) > 1:
-            return '|'.join(found)  # например 'ПМ|ЧП'
-        if len(found) == 1:
-            return found[0]
+    # 2. Ищем ВСЕ студии в строке подстрочным поиском.
+    #    Алиасы проверяем первыми и по убыванию длины (длинные раньше коротких),
+    #    чтобы «БАР ПАРК КУЛЬТУРЫ 2» не перекрылся более коротким вхождением.
+    found = []
+    for alias in sorted(STUDIO_ALIASES.keys(), key=len, reverse=True):
+        code = STUDIO_ALIASES[alias]
+        if alias in upper and code not in found:
+            found.append(code)
+    for code in STUDIO_CODES:
+        if code in upper and code not in found:
+            found.append(code)
 
-    # 3. Подстрочный поиск (запасной вариант)
-    single = _parse_single_studio(upper)
-    if single:
-        return single
+    if len(found) > 1:
+        return '|'.join(found)   # например 'ПМ|ЧП' или 'ПК1|ПК2'
+    if len(found) == 1:
+        return found[0]
 
     return upper  # вернём как есть
 
@@ -128,12 +125,16 @@ def _detect_format(df: pd.DataFrame) -> dict:
 
     # Если заголовки не найдены — угадываем по количеству колонок
     ncols = df.shape[1]
-    if ncols <= 8:
+    if ncols <= 7:
         # Короткий формат: №, Дата, Сумма, Инфо, Назначение, Студия, Статья
         return {'header_row': None, 'col_date': 1, 'col_amount': 2,
                 'col_desc': 4, 'col_studio': 5, 'col_cat': 6}
+    elif ncols == 8:
+        # Расширенный формат: №, Дата, Тип_документа, Номер, Сумма, Описание, Студия, Статья
+        return {'header_row': None, 'col_date': 1, 'col_amount': 4,
+                'col_desc': 5, 'col_studio': 6, 'col_cat': 7}
     else:
-        # Банковский формат
+        # Банковский формат (13+ колонок)
         return {'header_row': None, 'col_date': 1, 'col_amount': 4,
                 'col_desc': 6, 'col_studio': 11, 'col_cat': 12}
 
