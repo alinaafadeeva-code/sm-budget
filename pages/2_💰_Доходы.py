@@ -90,7 +90,7 @@ for entity_key, entity_studios in ENTITY_STUDIOS.items():
             # Только для студий не из ручного списка (не бар, не массаж)
             if existing_val is None and cat_code == 201 and studio not in MANUAL_REVENUE_STUDIOS:
                 visits = occ.get(studio, 0)
-                default_val = round(visits * AVG_TRAINING_PRICE, 0) if visits > 0 else 0.0
+                default_val = float(visits * AVG_TRAINING_PRICE) if visits > 0 else 0.0
             else:
                 default_val = existing_val if existing_val is not None else 0.0
 
