@@ -2,10 +2,11 @@ import streamlit as st
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from utils.sheets import save_revenue, load_revenue, clear_caches
+from utils.sheets import save_revenue, load_revenue, get_occupancy_dict, clear_caches
 from utils.mappings import (
     STUDIO_CODES, ENTITY_STUDIOS, ENTITY_NAMES,
     REVENUE_CATEGORIES, MONTHS_RU, STUDIO_ENTITY,
+    AVG_TRAINING_PRICE, MANUAL_REVENUE_STUDIOS,
 )
 import pandas as pd
 
@@ -26,26 +27,36 @@ with col3:
 
 st.divider()
 
-# Формируем список студий
-if entity_filter == 'Все':
-    studios = list(STUDIO_CODES.keys())
+# Загружаем заполняемость для авторасчёта абонементов
+occ = get_occupancy_dict(year, month)
+if occ:
+    st.info(
+        f'📊 Заполняемость за {MONTHS_RU[month]} {year} загружена. '
+        f'Выручка абонементов рассчитана автоматически: визиты × {AVG_TRAINING_PRICE:,} ₽. '
+        f'Бар и массаж — вводи вручную.'
+    )
 else:
-    studios = ENTITY_STUDIOS.get(entity_filter, [])
+    st.warning(
+        f'⚠️ Заполняемость за {MONTHS_RU[month]} {year} не введена. '
+        'Внеси её на странице «Заполняемость» — тогда выручка абонементов подставится автоматически.'
+    )
 
-# Показываем существующие данные
 existing = load_revenue()
+
+# Проверяем есть ли уже сохранённые данные за этот месяц
+has_saved = False
 if not existing.empty:
     mask = (existing['year'] == year) & (existing['month'] == month)
     if entity_filter != 'Все':
         mask &= existing['entity'] == entity_filter
-    existing_month = existing[mask]
-    if not existing_month.empty:
-        st.info(f'ℹ️ За {MONTHS_RU[month]} {year} уже внесено {len(existing_month)} записей о доходах.')
+    has_saved = existing[mask].any().any()
+    if has_saved:
+        st.info(f'ℹ️ За {MONTHS_RU[month]} {year} уже внесены доходы — показаны сохранённые значения.')
 
-# Форма ввода
 st.subheader(f'Выручка за {MONTHS_RU[month]} {year}')
 
 records = []
+
 for entity_key, entity_studios in ENTITY_STUDIOS.items():
     if entity_filter != 'Все' and entity_key != entity_filter:
         continue
@@ -53,7 +64,6 @@ for entity_key, entity_studios in ENTITY_STUDIOS.items():
     st.markdown(f'**{ENTITY_NAMES[entity_key]}**')
     cols_header = st.columns([2] + [1] * len(REVENUE_CATEGORIES))
 
-    # Шапка
     cols_header[0].markdown('*Студия*')
     for i, (cat_code, cat_name) in enumerate(REVENUE_CATEGORIES.items()):
         cols_header[i + 1].markdown(f'*{cat_name.replace("Выручка ", "")}*')
@@ -62,9 +72,10 @@ for entity_key, entity_studios in ENTITY_STUDIOS.items():
         studio_name = STUDIO_CODES[studio]
         cols = st.columns([2] + [1] * len(REVENUE_CATEGORIES))
         cols[0].write(studio_name)
+
         for i, (cat_code, cat_name) in enumerate(REVENUE_CATEGORIES.items()):
-            # Предзаполняем существующим значением
-            existing_val = 0.0
+            # Ищем сохранённое значение
+            existing_val = None
             if not existing.empty:
                 mask2 = (
                     (existing['year'] == year) &
@@ -75,10 +86,18 @@ for entity_key, entity_studios in ENTITY_STUDIOS.items():
                 if mask2.any():
                     existing_val = float(existing[mask2]['amount'].iloc[0])
 
+            # Авторасчёт абонементов: визиты × средняя цена
+            # Только для студий не из ручного списка (не бар, не массаж)
+            if existing_val is None and cat_code == 201 and studio not in MANUAL_REVENUE_STUDIOS:
+                visits = occ.get(studio, 0)
+                default_val = round(visits * AVG_TRAINING_PRICE, 0) if visits > 0 else 0.0
+            else:
+                default_val = existing_val if existing_val is not None else 0.0
+
             val = cols[i + 1].number_input(
                 f'{studio}_{cat_code}',
                 min_value=0.0,
-                value=existing_val,
+                value=default_val,
                 step=1000.0,
                 label_visibility='collapsed',
                 key=f'rev_{entity_key}_{studio}_{cat_code}_{year}_{month}',

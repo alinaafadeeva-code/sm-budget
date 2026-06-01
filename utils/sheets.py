@@ -104,7 +104,26 @@ def load_expenses() -> pd.DataFrame:
 # ─── Доходы ───────────────────────────────────────────────────────────────────
 
 def save_revenue(records: list):
+    """Сохраняет доходы, заменяя старые записи за тот же год/месяц/юрлицо."""
     ws = _get_or_create_sheet(SH_REVENUE, REVENUE_HEADERS)
+    if not records:
+        return
+    keys = {(r['entity'], r['year'], r['month']) for r in records}
+    df = _sheet_to_df(SH_REVENUE, REVENUE_HEADERS)
+    if not df.empty:
+        mask = pd.Series([False] * len(df))
+        for entity, year, month in keys:
+            mask |= (
+                (df['entity'].astype(str) == str(entity)) &
+                (df['year'].astype(str) == str(year)) &
+                (df['month'].astype(str) == str(month))
+            )
+        if mask.any():
+            ws.clear()
+            ws.append_row(REVENUE_HEADERS)
+            keep = df[~mask]
+            if not keep.empty:
+                ws.append_rows(keep.values.tolist(), value_input_option='RAW')
     rows = [[r.get(h, '') for h in REVENUE_HEADERS] for r in records]
     ws.append_rows(rows, value_input_option='RAW')
 
