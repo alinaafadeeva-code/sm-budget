@@ -79,6 +79,10 @@ exp_f  = filter_df(exp_df)
 rev_f  = filter_df(rev_df)
 sal_f  = filter_df(sal_df)
 
+# Исключаем «Без статьи» (category_code=0) — внутренние переводы, не расходы
+if not exp_f.empty:
+    exp_f = exp_f[exp_f['category_code'] != 0]
+
 # ── Эквайринг: 3% от выручки по каждой студии (авторасчёт) ────────────────────
 if not rev_f.empty:
     acq_by_studio = (
