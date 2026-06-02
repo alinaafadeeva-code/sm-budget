@@ -35,12 +35,12 @@ if exp_df.empty and rev_df.empty:
 # ── Фильтры ────────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.header('Фильтры')
-    year = st.number_input('Год', min_value=2024, max_value=2030, value=2026)
+    year = st.number_input('Год', min_value=2024, max_value=2030, value=2026, key='global_year')
 
     view_mode = st.radio('Период', ['Месяц', 'С начала года (YTD)'])
 
     if view_mode == 'Месяц':
-        month = st.selectbox('Месяц', list(MONTHS_RU.keys()), format_func=lambda x: MONTHS_RU[x])
+        month = st.selectbox('Месяц', list(MONTHS_RU.keys()), format_func=lambda x: MONTHS_RU[x], key='global_month')
         months_range = [month]
     else:
         max_month = st.slider('По месяц включительно', 1, 12, 5, format=lambda x: MONTHS_RU[x])

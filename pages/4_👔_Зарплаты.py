@@ -17,9 +17,9 @@ st.markdown('Вноси данные **раз в месяц** после его 
 
 col1, col2 = st.columns(2)
 with col1:
-    year = st.number_input('Год', min_value=2024, max_value=2030, value=2026)
+    year = st.number_input('Год', min_value=2024, max_value=2030, value=2026, key='global_year')
 with col2:
-    month = st.selectbox('Месяц', options=list(MONTHS_RU.keys()), format_func=lambda x: MONTHS_RU[x])
+    month = st.selectbox('Месяц', options=list(MONTHS_RU.keys()), format_func=lambda x: MONTHS_RU[x], key='global_month')
 
 existing = load_salaries()
 records = []
