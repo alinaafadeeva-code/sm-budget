@@ -11,6 +11,7 @@ from utils.mappings import (
     ALL_EXPENSE_CATEGORIES, REVENUE_CATEGORIES,
     MONTHS_RU, ENTITY_COLORS,
 )
+from utils.ui import init_period
 
 st.set_page_config(page_title='Дашборд', page_icon='📊', layout='wide')
 st.title('📊 Дашборд')
@@ -33,9 +34,11 @@ if exp_df.empty and rev_df.empty:
 
 
 # ── Фильтры ────────────────────────────────────────────────────────────────────
+init_period()
+
 with st.sidebar:
     st.header('Фильтры')
-    year = st.number_input('Год', min_value=2024, max_value=2030, value=2026, key='global_year')
+    year = st.number_input('Год', min_value=2024, max_value=2030, key='global_year')
 
     view_mode = st.radio('Период', ['Месяц', 'С начала года (YTD)'])
 

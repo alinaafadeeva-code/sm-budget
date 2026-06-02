@@ -9,23 +9,19 @@ from utils.mappings import (
     REVENUE_CATEGORIES, MONTHS_RU, STUDIO_ENTITY,
     AVG_TRAINING_PRICE, MANUAL_REVENUE_STUDIOS,
 )
+from utils.ui import sidebar_period
 
 st.set_page_config(page_title='Доходы', page_icon='💰', layout='wide')
 st.title('💰 Ввод доходов')
 
-col1, col2, col3 = st.columns(3)
-with col1:
-    year  = st.number_input('Год', min_value=2024, max_value=2030, value=2026, key='global_year')
-with col2:
-    month = st.selectbox('Месяц', options=list(MONTHS_RU.keys()),
-                         format_func=lambda x: MONTHS_RU[x], key='global_month')
-with col3:
-    entity_filter = st.selectbox(
-        'Юрлицо',
-        options=['Все'] + list(ENTITY_NAMES.keys()),
-        format_func=lambda x: 'Все юрлица' if x == 'Все'
-                               else f'{x} — {ENTITY_NAMES[x]}',
-    )
+year, month = sidebar_period()
+
+entity_filter = st.selectbox(
+    'Юрлицо',
+    options=['Все'] + list(ENTITY_NAMES.keys()),
+    format_func=lambda x: 'Все юрлица' if x == 'Все'
+                           else f'{x} — {ENTITY_NAMES[x]}',
+)
 
 st.divider()
 

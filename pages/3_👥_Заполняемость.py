@@ -5,17 +5,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from utils.sheets import save_occupancy, load_occupancy, get_occupancy_dict, load_expenses, save_expenses, clear_caches
 from utils.processor import apply_occupancy
 from utils.mappings import OCCUPANCY_STUDIOS, STUDIO_CODES, MONTHS_RU
+from utils.ui import sidebar_period
 import pandas as pd
 
 st.set_page_config(page_title='Заполняемость', page_icon='👥', layout='wide')
 st.title('👥 Заполняемость студий')
 st.markdown('Вводи данные **1–2 числа** нового месяца. После сохранения общие расходы прошлого месяца будут автоматически разнесены по студиям.')
 
-col1, col2 = st.columns(2)
-with col1:
-    year = st.number_input('Год', min_value=2024, max_value=2030, value=2026, key='global_year')
-with col2:
-    month = st.selectbox('Месяц', options=list(MONTHS_RU.keys()), format_func=lambda x: MONTHS_RU[x], key='global_month')
+year, month = sidebar_period()
 
 # Загружаем существующие данные
 existing = get_occupancy_dict(year, month)
