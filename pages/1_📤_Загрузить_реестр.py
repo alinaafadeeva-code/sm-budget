@@ -77,8 +77,25 @@ if uploaded:
         summary = summary.sort_values('Сумма', ascending=False)
         st.dataframe(summary, use_container_width=True)
 
-    # Кнопка сохранения
+    # Режим сохранения
     st.divider()
+    save_mode = st.radio(
+        'Режим сохранения',
+        options=['replace', 'append'],
+        format_func=lambda x: (
+            '🔄 Заменить — удалить старые данные за этот месяц и записать новые'
+            if x == 'replace' else
+            '➕ Дополнить — добавить к уже сохранённым данным (старые останутся)'
+        ),
+        index=1,
+        help='«Дополнить» — если реестр за этот месяц уже загружен и ты хочешь добавить ещё транзакции. «Заменить» — если хочешь перезаписать всё с нуля.',
+    )
+
+    if save_mode == 'append':
+        st.info('ℹ️ Режим «Дополнить»: существующие записи за этот период **не будут удалены**.')
+    else:
+        st.warning('⚠️ Режим «Заменить»: все существующие записи за это юрлицо и месяц **будут удалены** и заменены новыми.')
+
     if st.button('💾 Сохранить в базу', type='primary', use_container_width=True):
         with st.spinner('Сохраняю…'):
             # Применяем заполняемость к общим расходам, если она есть
@@ -91,7 +108,7 @@ if uploaded:
                 if occ:
                     month_txns = apply_occupancy(month_txns, occ)
                 all_records.extend(month_txns)
-            save_expenses(all_records)
+            save_expenses(all_records, replace=(save_mode == 'replace'))
             clear_caches()
         st.success('✅ Реестр успешно сохранён!')
         st.balloons()
