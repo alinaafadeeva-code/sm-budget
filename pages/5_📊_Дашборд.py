@@ -11,7 +11,7 @@ from utils.mappings import (
     ALL_EXPENSE_CATEGORIES, REVENUE_CATEGORIES,
     MONTHS_RU, ENTITY_COLORS, ACQUIRING_RATE,
 )
-from utils.ui import init_period
+from utils.ui import sidebar_period
 
 st.set_page_config(page_title='Дашборд', page_icon='📊', layout='wide')
 st.title('📊 Дашборд')
@@ -34,21 +34,22 @@ if exp_df.empty and rev_df.empty:
 
 
 # ── Фильтры ────────────────────────────────────────────────────────────────────
-init_period()
+# Год и месяц — из общего сайдбара (тот же виджет что на всех страницах)
+year, month = sidebar_period()
 
 with st.sidebar:
-    st.header('Фильтры')
-    year = st.number_input('Год', min_value=2024, max_value=2030, key='global_year')
-
+    st.header('Дополнительно')
     view_mode = st.radio('Период', ['Месяц', 'С начала года (YTD)'])
 
     if view_mode == 'Месяц':
-        month = st.selectbox('Месяц', list(MONTHS_RU.keys()), format_func=lambda x: MONTHS_RU[x], key='global_month')
         months_range = [month]
     else:
-        max_month = st.slider('По месяц включительно', 1, 12, 5, format=lambda x: MONTHS_RU[x])
+        max_month = st.slider(
+            'По месяц включительно', 1, 12,
+            value=month,
+            format=lambda x: MONTHS_RU[x],
+        )
         months_range = list(range(1, max_month + 1))
-        month = None
 
     studio_filter = st.selectbox(
         'Студия',
