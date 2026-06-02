@@ -79,9 +79,14 @@ exp_f  = filter_df(exp_df)
 rev_f  = filter_df(rev_df)
 sal_f  = filter_df(sal_df)
 
-# Исключаем «Без статьи» (category_code=0) — внутренние переводы, не расходы
+# Исключаем non-operating статьи из расходов P&L:
+#   0  — «Без статьи» (внутренние переводы)
+#   24 — «Возврат займа»
+#   25 — «Инвест займы»
+#   27 — «Инвест займы» (код бухгалтера)
+NON_OPERATING_CATEGORIES = {0, 24, 25, 27}
 if not exp_f.empty:
-    exp_f = exp_f[exp_f['category_code'] != 0]
+    exp_f = exp_f[~exp_f['category_code'].isin(NON_OPERATING_CATEGORIES)]
 
 # ── Эквайринг: 3% от выручки по каждой студии (авторасчёт) ────────────────────
 if not rev_f.empty:
