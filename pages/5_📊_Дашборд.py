@@ -359,11 +359,13 @@ with tab4:
 
     if not all_exp_show2.empty or total_acquiring > 0:
         if not all_exp_show2.empty:
-            all_exp_show2 = all_exp_show2[all_exp_show2['studio'].isin(STUDIO_CODES)]
             all_exp_show2['category_name'] = all_exp_show2['category_code'].map(
                 lambda x: ALL_EXPENSE_CATEGORIES.get(int(x), f'Статья {x}') if pd.notna(x) else 'Без статьи'
             )
-            all_exp_show2['studio_name'] = all_exp_show2['studio'].map(STUDIO_CODES)
+            # Нераспределённые расходы (ОБЩ СЕТЬ и т.п.) показываем в колонке «Общие»
+            all_exp_show2['studio_name'] = all_exp_show2['studio'].map(
+                lambda s: STUDIO_CODES.get(s, 'Общие')
+            )
             pivot = all_exp_show2.pivot_table(
                 index='category_name', columns='studio_name',
                 values='amount', aggfunc='sum', fill_value=0,
