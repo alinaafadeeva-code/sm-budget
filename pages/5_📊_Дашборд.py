@@ -9,7 +9,7 @@ from utils.sheets import load_expenses, load_revenue, load_salaries
 from utils.mappings import (
     STUDIO_CODES, ENTITY_NAMES, ENTITY_STUDIOS,
     ALL_EXPENSE_CATEGORIES, REVENUE_CATEGORIES,
-    MONTHS_RU, ENTITY_COLORS,
+    MONTHS_RU, ENTITY_COLORS, ACQUIRING_RATE,
 )
 from utils.ui import init_period
 
@@ -78,10 +78,23 @@ exp_f  = filter_df(exp_df)
 rev_f  = filter_df(rev_df)
 sal_f  = filter_df(sal_df)
 
+# ── Эквайринг: 3% от выручки по каждой студии (авторасчёт) ────────────────────
+if not rev_f.empty:
+    acq_by_studio = (
+        rev_f.groupby('studio')['amount'].sum()
+        .mul(ACQUIRING_RATE)
+        .round(2)
+    )
+    total_acquiring = acq_by_studio.sum()
+else:
+    acq_by_studio = pd.Series(dtype=float)
+    total_acquiring = 0.0
+
 total_revenue  = rev_f['amount'].sum() if not rev_f.empty else 0
 total_expenses = (
     (exp_f['amount'].sum() if not exp_f.empty else 0) +
-    (sal_f['amount'].sum() if not sal_f.empty else 0)
+    (sal_f['amount'].sum() if not sal_f.empty else 0) +
+    total_acquiring
 )
 profit = total_revenue - total_expenses
 margin = (profit / total_revenue * 100) if total_revenue > 0 else 0
@@ -96,7 +109,8 @@ period_label = (
 st.subheader(f'{period_label} {year}')
 c1, c2, c3, c4 = st.columns(4)
 c1.metric('💚 Доходы',  fmt(total_revenue))
-c2.metric('🔴 Расходы', fmt(total_expenses))
+c2.metric('🔴 Расходы', fmt(total_expenses),
+          help=f'Включает эквайринг {ACQUIRING_RATE*100:.0f}% = {fmt(total_acquiring)}')
 c3.metric(
     '🏆 Прибыль', fmt(profit),
     delta=f'{margin:.1f}% маржа',
@@ -113,7 +127,6 @@ tab1, tab2, tab3, tab4 = st.tabs(['По студиям', 'По статьям', 
 
 # ══ Вкладка 1: По студиям ══════════════════════════════════════════════════════
 with tab1:
-    # Расходы по студиям
     all_exp = pd.concat([d for d in [exp_f, sal_f] if not d.empty], ignore_index=True) if (not exp_f.empty or not sal_f.empty) else pd.DataFrame()
 
     col_left, col_right = st.columns(2)
@@ -124,10 +137,13 @@ with tab1:
             exp_by_studio = (
                 all_exp[all_exp['studio'].isin(STUDIO_CODES)]
                 .groupby('studio')['amount'].sum()
-                .reset_index()
             )
+            # Добавляем эквайринг к расходам по студиям
+            exp_by_studio = exp_by_studio.add(acq_by_studio, fill_value=0)
+            exp_by_studio = exp_by_studio.reset_index()
+            exp_by_studio.columns = ['studio', 'amount']
             exp_by_studio['studio_name'] = exp_by_studio['studio'].map(STUDIO_CODES)
-            exp_by_studio = exp_by_studio.sort_values('amount', ascending=True)
+            exp_by_studio = exp_by_studio.dropna(subset=['studio_name']).sort_values('amount', ascending=True)
             fig = px.bar(
                 exp_by_studio, x='amount', y='studio_name', orientation='h',
                 color='amount', color_continuous_scale='Reds',
@@ -141,9 +157,7 @@ with tab1:
     with col_right:
         st.markdown('**Доходы по студиям**')
         if not rev_f.empty:
-            rev_by_studio = (
-                rev_f.groupby('studio')['amount'].sum().reset_index()
-            )
+            rev_by_studio = rev_f.groupby('studio')['amount'].sum().reset_index()
             rev_by_studio['studio_name'] = rev_by_studio['studio'].map(lambda x: STUDIO_CODES.get(x, x))
             rev_by_studio = rev_by_studio.sort_values('amount', ascending=True)
             fig2 = px.bar(
@@ -156,11 +170,13 @@ with tab1:
         else:
             st.info('Нет данных')
 
-    # Прибыль по студиям (bar chart)
+    # P&L по студиям
     st.markdown('**P&L по студиям**')
     if not rev_f.empty and not all_exp.empty:
         rev_s = rev_f.groupby('studio')['amount'].sum()
         exp_s = all_exp[all_exp['studio'].isin(STUDIO_CODES)].groupby('studio')['amount'].sum()
+        # Добавляем эквайринг
+        exp_s = exp_s.add(acq_by_studio, fill_value=0)
         all_studios_in_data = set(rev_s.index) | set(exp_s.index)
         pnl_rows = []
         for s in all_studios_in_data:
@@ -177,12 +193,26 @@ with tab1:
 
 # ══ Вкладка 2: По статьям ══════════════════════════════════════════════════════
 with tab2:
-    if not exp_f.empty or not sal_f.empty:
-        all_exp2 = pd.concat([d for d in [exp_f, sal_f] if not d.empty], ignore_index=True)
-        all_exp2['category_name'] = all_exp2['category_code'].map(
-            lambda x: ALL_EXPENSE_CATEGORIES.get(int(x), f'Статья {x}') if pd.notna(x) else 'Без статьи'
-        )
-        cat_sum = all_exp2.groupby('category_name')['amount'].sum().reset_index()
+    if not exp_f.empty or not sal_f.empty or total_acquiring > 0:
+        parts = [d for d in [exp_f, sal_f] if not d.empty]
+        all_exp2 = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
+
+        if not all_exp2.empty:
+            all_exp2['category_name'] = all_exp2['category_code'].map(
+                lambda x: ALL_EXPENSE_CATEGORIES.get(int(x), f'Статья {x}') if pd.notna(x) else 'Без статьи'
+            )
+            cat_sum = all_exp2.groupby('category_name')['amount'].sum().reset_index()
+        else:
+            cat_sum = pd.DataFrame(columns=['category_name', 'amount'])
+
+        # Добавляем эквайринг отдельной строкой
+        if total_acquiring > 0:
+            acq_label = f'Эквайринг (расч. {ACQUIRING_RATE*100:.0f}%)'
+            cat_sum = pd.concat([
+                cat_sum,
+                pd.DataFrame([{'category_name': acq_label, 'amount': total_acquiring}])
+            ], ignore_index=True)
+
         cat_sum = cat_sum.sort_values('amount', ascending=False).head(20)
         cat_sum_asc = cat_sum.sort_values('amount', ascending=True)
 
@@ -195,7 +225,6 @@ with tab2:
         fig4.update_layout(height=600, coloraxis_showscale=False)
         st.plotly_chart(fig4, use_container_width=True)
 
-        # Доля в пирог-чарте
         fig5 = px.pie(
             cat_sum, values='amount', names='category_name',
             title='Структура расходов',
@@ -224,13 +253,28 @@ with tab3:
     exp_monthly = monthly_series(exp_df, 'Расходы')
     sal_monthly = monthly_series(sal_df, 'ЗП')
 
-    # Объединяем
+    # Эквайринг по месяцам
+    if not rev_df.empty:
+        rev_mask = (rev_df['year'] == year)
+        if studio_filter != 'Все':
+            rev_mask &= rev_df['studio'] == studio_filter
+        if entity_filter != 'Все':
+            rev_mask &= rev_df['entity'] == entity_filter
+        acq_monthly = (
+            rev_df[rev_mask].groupby('month')['amount'].sum()
+            .mul(ACQUIRING_RATE).round(2).reset_index()
+        )
+        acq_monthly.columns = ['month', 'Эквайринг']
+    else:
+        acq_monthly = pd.DataFrame(columns=['month', 'Эквайринг'])
+
     months_all = pd.DataFrame({'month': list(range(1, 13))})
     merged = months_all.merge(rev_monthly, on='month', how='left')
     merged = merged.merge(exp_monthly, on='month', how='left')
     merged = merged.merge(sal_monthly, on='month', how='left')
+    merged = merged.merge(acq_monthly, on='month', how='left')
     merged = merged.fillna(0)
-    merged['Расходы всего'] = merged.get('Расходы', 0) + merged.get('ЗП', 0)
+    merged['Расходы всего'] = merged.get('Расходы', 0) + merged.get('ЗП', 0) + merged.get('Эквайринг', 0)
     merged['Прибыль'] = merged['Доходы'] - merged['Расходы всего']
     merged['month_name'] = merged['month'].map(MONTHS_RU)
 
@@ -244,7 +288,6 @@ with tab3:
     fig6.update_layout(height=400, xaxis_title='', yaxis_title='₽', hovermode='x unified')
     st.plotly_chart(fig6, use_container_width=True)
 
-    # Накопительный итог
     merged['Доходы нарастающим'] = merged['Доходы'].cumsum()
     merged['Расходы нарастающим'] = merged['Расходы всего'].cumsum()
     merged['Прибыль нарастающим'] = merged['Прибыль'].cumsum()
@@ -261,32 +304,53 @@ with tab3:
 # ══ Вкладка 4: Сводная таблица ════════════════════════════════════════════════
 with tab4:
     st.markdown('**Расходы: статья × студия**')
-    if not exp_f.empty or not sal_f.empty:
-        all_exp3 = pd.concat([d for d in [exp_f, sal_f] if not d.empty], ignore_index=True)
-        all_exp3 = all_exp3[all_exp3['studio'].isin(STUDIO_CODES)]
-        all_exp3['category_name'] = all_exp3['category_code'].map(
-            lambda x: ALL_EXPENSE_CATEGORIES.get(int(x), f'Статья {x}') if pd.notna(x) else 'Без статьи'
-        )
-        all_exp3['studio_name'] = all_exp3['studio'].map(STUDIO_CODES)
+    if not exp_f.empty or not sal_f.empty or total_acquiring > 0:
+        parts3 = [d for d in [exp_f, sal_f] if not d.empty]
+        all_exp3 = pd.concat(parts3, ignore_index=True) if parts3 else pd.DataFrame()
 
-        pivot = all_exp3.pivot_table(
-            index='category_name', columns='studio_name',
-            values='amount', aggfunc='sum', fill_value=0,
-        )
-        pivot['ИТОГО'] = pivot.sum(axis=1)
-        pivot = pivot.sort_values('ИТОГО', ascending=False)
-
-        # Форматируем числа с пробелом как разделителем тысяч
-        fmt_fn = lambda x: f'{x:,.0f}'.replace(',', ' ')
-        try:
-            styled = pivot.style.format(fmt_fn).background_gradient(
-                cmap='Reds', subset=[c for c in pivot.columns if c != 'ИТОГО']
+        if not all_exp3.empty:
+            all_exp3 = all_exp3[all_exp3['studio'].isin(STUDIO_CODES)]
+            all_exp3['category_name'] = all_exp3['category_code'].map(
+                lambda x: ALL_EXPENSE_CATEGORIES.get(int(x), f'Статья {x}') if pd.notna(x) else 'Без статьи'
             )
-            st.dataframe(styled, use_container_width=True, height=500)
-        except Exception:
-            # pandas 2.1+ переименовал applymap → map
-            _map = getattr(pivot, 'map', None) or pivot.applymap
-            st.dataframe(_map(fmt_fn), use_container_width=True, height=500)
+            all_exp3['studio_name'] = all_exp3['studio'].map(STUDIO_CODES)
+            pivot = all_exp3.pivot_table(
+                index='category_name', columns='studio_name',
+                values='amount', aggfunc='sum', fill_value=0,
+            )
+        else:
+            pivot = pd.DataFrame()
+
+        # Добавляем строку эквайринга
+        if total_acquiring > 0:
+            acq_label = f'Эквайринг (расч. {ACQUIRING_RATE*100:.0f}%)'
+            acq_row = {
+                STUDIO_CODES.get(s, s): round(v, 0)
+                for s, v in acq_by_studio.items()
+                if s in STUDIO_CODES
+            }
+            acq_df = pd.DataFrame([acq_row], index=[acq_label])
+            if pivot.empty:
+                pivot = acq_df
+            else:
+                # Выравниваем колонки
+                for col in acq_df.columns:
+                    if col not in pivot.columns:
+                        pivot[col] = 0
+                pivot = pd.concat([pivot, acq_df.reindex(columns=pivot.columns, fill_value=0)])
+
+        if not pivot.empty:
+            pivot['ИТОГО'] = pivot.sum(axis=1)
+            pivot = pivot.sort_values('ИТОГО', ascending=False)
+            fmt_fn = lambda x: f'{x:,.0f}'.replace(',', ' ')
+            try:
+                styled = pivot.style.format(fmt_fn).background_gradient(
+                    cmap='Reds', subset=[c for c in pivot.columns if c != 'ИТОГО']
+                )
+                st.dataframe(styled, use_container_width=True, height=500)
+            except Exception:
+                _map = getattr(pivot, 'map', None) or pivot.applymap
+                st.dataframe(_map(fmt_fn), use_container_width=True, height=500)
     else:
         st.info('Нет данных о расходах')
 
