@@ -114,14 +114,21 @@ def _detect_format(df: pd.DataFrame) -> dict:
                             return i
                 return None
 
-            return {
+            fmt = {
                 'header_row': row_idx,
                 'col_date':   find(['дата']),
                 'col_amount': find(['сумма']),
-                'col_desc':   find(['назначение']),
+                'col_desc':   find(['назначение', 'информация']),
                 'col_studio': find(['студия', 'комментарий']),
                 'col_cat':    find(['статья']),
             }
+            # Если заголовок «Статья» пустой (NaN), ищем колонку после «Студия/Комментарий»
+            if fmt['col_cat'] is None:
+                if fmt['col_studio'] is not None:
+                    fmt['col_cat'] = fmt['col_studio'] + 1
+                else:
+                    fmt['col_cat'] = df.shape[1] - 1
+            return fmt
 
     # Если заголовки не найдены — угадываем по количеству колонок
     ncols = df.shape[1]
