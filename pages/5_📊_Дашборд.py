@@ -32,6 +32,13 @@ exp_df = load_expenses()
 rev_df = load_revenue()
 sal_df = load_salaries()
 
+# Нормализация категорий: для баров код 17 (Прочие расходы) → 15 (Продукты для бара)
+# Бухгалтер может ставить 17 вместо 15 — исправляем автоматически
+_BAR_STUDIOS = {'БАР ПК2', 'БАР ТЛ', 'БАР ЛЖ'}
+if not exp_df.empty:
+    _bar_mask = exp_df['studio'].isin(_BAR_STUDIOS) & (exp_df['category_code'] == 17)
+    exp_df.loc[_bar_mask, 'category_code'] = 15
+
 if exp_df.empty and rev_df.empty:
     st.info('Данных пока нет. Загрузи реестры платежей и введи доходы.')
     st.stop()
