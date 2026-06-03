@@ -854,7 +854,8 @@ with tab4:
                         cmap='Reds', subset=[c for c in pivot.columns if c != 'ИТОГО'])
                     st.dataframe(styled, use_container_width=True, height=500)
                 except Exception:
-                    st.dataframe(pivot.applymap(fmt_fn), use_container_width=True, height=500)
+                    _fn = getattr(pivot, 'map', pivot.applymap)
+                    st.dataframe(_fn(fmt_fn), use_container_width=True, height=500)
         else:
             st.info('Нет данных')
 
@@ -876,6 +877,7 @@ with tab4:
                 styled2 = pivot2.style.format(fmt_fn2).background_gradient(cmap='Greens')
                 st.dataframe(styled2, use_container_width=True, height=500)
             except Exception:
-                st.dataframe(pivot2.applymap(fmt_fn2), use_container_width=True, height=500)
+                    _fn2 = getattr(pivot2, 'map', pivot2.applymap)
+                    st.dataframe(_fn2(fmt_fn2), use_container_width=True, height=500)
         else:
             st.info('Нет данных')

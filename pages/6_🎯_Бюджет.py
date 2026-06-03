@@ -81,12 +81,12 @@ def color_profit(val):
         return 'color: #DC2626; font-weight: 700'
     return 'color: #065F46; font-weight: 700'
 
-st.dataframe(
-    profit_display.style
-        .applymap(color_profit)
-        .format(lambda x: f'{x:,.0f}'.replace(',', ' ')),
-    use_container_width=True,
-)
+styler = profit_display.style.format(lambda x: f'{x:,.0f}'.replace(',', ' '))
+try:
+    styler = styler.map(color_profit)       # pandas >= 2.1
+except AttributeError:
+    styler = styler.applymap(color_profit)  # pandas < 2.1
+st.dataframe(styler, use_container_width=True)
 
 # Годовые итоги
 st.divider()
