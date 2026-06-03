@@ -117,14 +117,7 @@ with st.sidebar:
         format_func=lambda x: 'Все' if x == 'Все' else f'{x} — {ENTITY_NAMES[x]}',
     )
 
-    st.divider()
-    st.markdown('**👔 Расходы руководителей**')
-    mgmt_expenses = st.number_input(
-        '', min_value=0, step=10_000,
-        key=f'mgmt_exp_{year}_{"-".join(map(str, months_range))}',
-        help='Вычитаются из чистой прибыли',
-        label_visibility='collapsed',
-    )
+    pass  # sidebar end
 
 
 # ── Фильтрация ─────────────────────────────────────────────────────────────────
@@ -162,18 +155,30 @@ else:
     total_acquiring = 0.0
 
 # ── Расчёт P&L ─────────────────────────────────────────────────────────────────
+# Переменные расходы: эквайринг + прямые расходы пропорциональные выручке/посещениям
+VARIABLE_CATS = {8, 9, 10, 14, 15}  # товары, гигиена, расходные, химчистка, продукты бара
+
 total_revenue  = rev_f['amount'].sum()  if not rev_f.empty  else 0.0
 total_sal      = sal_f['amount'].sum()  if not sal_f.empty  else 0.0
-total_oper_exp_raw = exp_f_oper['amount'].sum() if not exp_f_oper.empty else 0.0
-total_oper_exp = total_oper_exp_raw + total_sal + total_acquiring
 
-oper_profit  = total_revenue - total_oper_exp
+if not exp_f_oper.empty:
+    var_exp_raw  = exp_f_oper[exp_f_oper['category_code'].isin(VARIABLE_CATS)]['amount'].sum()
+    fix_exp_raw  = exp_f_oper[~exp_f_oper['category_code'].isin(VARIABLE_CATS)]['amount'].sum()
+else:
+    var_exp_raw = fix_exp_raw = 0.0
+
+total_variable  = var_exp_raw + total_acquiring   # переменные: прямые + эквайринг
+total_fixed     = fix_exp_raw + total_sal          # постоянные: оверхед + ФОТ
+total_oper_exp  = total_variable + total_fixed     # итого операционные
+total_oper_exp_raw = fix_exp_raw + var_exp_raw     # без эквайринга (для совместимости)
+
+gross_profit = total_revenue - total_variable
+gross_margin = gross_profit / total_revenue * 100 if total_revenue else 0.0
+oper_profit  = gross_profit - total_fixed
 oper_margin  = oper_profit / total_revenue * 100 if total_revenue else 0.0
 below_total  = exp_f_below['amount'].sum() if not exp_f_below.empty else 0.0
 net_profit   = oper_profit - below_total
 net_margin   = net_profit / total_revenue * 100 if total_revenue else 0.0
-final_result = net_profit - mgmt_expenses
-final_margin = final_result / total_revenue * 100 if total_revenue else 0.0
 
 period_label = (MONTHS_RU[months_range[0]] if len(months_range) == 1
                 else f'Январь – {MONTHS_RU[months_range[-1]]}')
@@ -192,30 +197,29 @@ with c1:
     ), unsafe_allow_html=True)
 
 with c2:
-    margin_color = '#92400E' if oper_profit < total_revenue * 0.2 else '#1E40AF'
-    bg_color     = '#EFF6FF' if oper_profit >= 0 else '#FEF2F2'
-    fg_color     = '#1E40AF' if oper_profit >= 0 else '#991B1B'
+    bg2 = '#EFF6FF' if gross_profit >= 0 else '#FEF2F2'
+    fg2 = '#1E40AF' if gross_profit >= 0 else '#991B1B'
     st.markdown(kpi_card(
-        '🏆 ОПЕРАЦ. ПРИБЫЛЬ', fmt(oper_profit),
-        sub=f'маржа {oper_margin:.1f}%' if total_revenue else None,
-        bg=bg_color, fg=fg_color,
+        '📊 ВАЛОВАЯ ПРИБЫЛЬ', fmt(gross_profit),
+        sub=f'{gross_margin:.1f}%' if total_revenue else None,
+        bg=bg2, fg=fg2,
     ), unsafe_allow_html=True)
 
 with c3:
-    fg3 = '#065F46' if net_profit >= 0 else '#991B1B'
-    bg3 = '#ECFDF5' if net_profit >= 0 else '#FEF2F2'
+    bg3 = '#F0FDF4' if oper_profit >= 0 else '#FEF2F2'
+    fg3 = '#166534' if oper_profit >= 0 else '#991B1B'
     st.markdown(kpi_card(
-        '💰 ЧИСТАЯ ПРИБЫЛЬ', fmt(net_profit),
-        sub=pct_str(net_profit, total_revenue),
+        '🏆 ОПЕРАЦ. ПРИБЫЛЬ', fmt(oper_profit),
+        sub=f'{oper_margin:.1f}%' if total_revenue else None,
         bg=bg3, fg=fg3,
     ), unsafe_allow_html=True)
 
 with c4:
-    fg4 = '#1F2937' if final_result >= 0 else '#991B1B'
-    bg4 = '#F9FAFB' if final_result >= 0 else '#FEF2F2'
+    bg4 = '#ECFDF5' if net_profit >= 0 else '#FEF2F2'
+    fg4 = '#065F46' if net_profit >= 0 else '#991B1B'
     st.markdown(kpi_card(
-        '✅ ИТОГ К РАСПРЕДЕЛЕНИЮ', fmt(final_result),
-        sub=pct_str(final_result, total_revenue),
+        '💰 ЧИСТАЯ ПРИБЫЛЬ', fmt(net_profit),
+        sub=f'{net_margin:.1f}%' if total_revenue else None,
         bg=bg4, fg=fg4,
     ), unsafe_allow_html=True)
 
@@ -225,50 +229,56 @@ st.markdown('<br>', unsafe_allow_html=True)
 # РАЗДЕЛ 2: P&L таблица
 # ══════════════════════════════════════════════════════════════════════════════
 def tr(label, amount, total, cls='', color=''):
-    pct = pct_str(amount, total)
+    p = pct_str(amount, total)
     neg = amount < 0
     val_fmt = ('(' + fmt(abs(amount)) + ')') if neg else fmt(amount)
     style = f'style="color:{color};"' if color else ''
-    return (f'<tr class="{cls}">'
-            f'<td {style}>{label}</td>'
-            f'<td>{pct}</td>'
-            f'<td {style}>{val_fmt}</td></tr>')
+    return (f'<tr class="{cls}"><td {style}>{label}</td>'
+            f'<td>{p}</td><td {style}>{val_fmt}</td></tr>')
 
-# Разбивка налогов и фин расходов
-below_detail = ''
+def sub_row(label, amount, total):
+    p = pct_str(amount, total)
+    return (f'<tr class="pnl-sub">'
+            f'<td style="padding-left:28px;color:#9CA3AF;">{label}</td>'
+            f'<td style="color:#9CA3AF;">{p}</td>'
+            f'<td style="color:#9CA3AF;">({fmt(amount)})</td></tr>')
+
+# Детализация налогов
+tax_detail = ''
 if not exp_f_below.empty:
     tmp = exp_f_below.copy()
     tmp['cat'] = tmp['category_code'].map(
         lambda x: ALL_EXPENSE_CATEGORIES.get(int(x), f'Статья {x}') if pd.notna(x) else '?'
     )
     for cat, grp in tmp.groupby('cat'):
-        a = grp['amount'].sum()
-        below_detail += tr(f'&nbsp;&nbsp;&nbsp;{cat}', -a, total_revenue, 'pnl-sub', '#9CA3AF')
+        tax_detail += sub_row(cat, grp['amount'].sum(), total_revenue)
+
+def color_val(v):
+    return '#065F46' if v >= 0 else '#DC2626'
 
 pnl_html = f"""
 <div class="pnl-wrap">
 <table class="pnl-table">
   <colgroup><col style="width:55%"><col style="width:15%"><col style="width:30%"></colgroup>
-  {tr('💚 Выручка', total_revenue, total_revenue, color='#065F46')}
-  <tr class="pnl-sub"><td style="padding-left:28px;color:#9CA3AF;">ФОТ</td>
-    <td style="color:#9CA3AF;">{pct_str(total_sal, total_revenue)}</td>
-    <td style="color:#9CA3AF;">({fmt(total_sal)})</td></tr>
-  <tr class="pnl-sub"><td style="padding-left:28px;color:#9CA3AF;">Операц. затраты</td>
-    <td style="color:#9CA3AF;">{pct_str(total_oper_exp_raw, total_revenue)}</td>
-    <td style="color:#9CA3AF;">({fmt(total_oper_exp_raw)})</td></tr>
-  <tr class="pnl-sub"><td style="padding-left:28px;color:#9CA3AF;">Эквайринг {int(ACQUIRING_RATE*100)}%</td>
-    <td style="color:#9CA3AF;">{pct_str(total_acquiring, total_revenue)}</td>
-    <td style="color:#9CA3AF;">({fmt(total_acquiring)})</td></tr>
-  {tr('🔴 Итого операц. расходы', -total_oper_exp, total_revenue, 'pnl-div', '#DC2626')}
-  {tr('🏆 Операционная прибыль', oper_profit, total_revenue, 'pnl-bold pnl-div',
-      '#1D4ED8' if oper_profit >= 0 else '#DC2626')}
-  {below_detail}
-  {tr('💸 Налоги и фин. расходы', -below_total, total_revenue, 'pnl-sub', '#D97706') if below_total else ''}
-  {tr('💰 Чистая прибыль', net_profit, total_revenue, 'pnl-bold pnl-div',
-      '#065F46' if net_profit >= 0 else '#DC2626')}
-  {tr('👔 Расходы руководителей', -mgmt_expenses, total_revenue, 'pnl-sub', '#6B7280') if mgmt_expenses else ''}
-  {tr('✅ Итог к распределению', final_result, total_revenue, 'pnl-result pnl-div',
-      '#065F46' if final_result >= 0 else '#DC2626')}
+
+  {tr('💚 &nbsp;Выручка', total_revenue, total_revenue, 'pnl-bold', '#065F46')}
+
+  {sub_row('Товары и расходники', var_exp_raw, total_revenue)}
+  {sub_row(f'Эквайринг {int(ACQUIRING_RATE*100)}%', total_acquiring, total_revenue)}
+  {tr('📦 &nbsp;Переменные расходы', -total_variable, total_revenue, 'pnl-div', '#DC2626')}
+
+  {tr('📊 &nbsp;Валовая прибыль', gross_profit, total_revenue, 'pnl-bold pnl-div', color_val(gross_profit))}
+
+  {sub_row('ФОТ', total_sal, total_revenue)}
+  {sub_row('Аренда и оверхед', fix_exp_raw, total_revenue)}
+  {tr('🏗 &nbsp;Постоянные расходы', -total_fixed, total_revenue, 'pnl-div', '#DC2626')}
+
+  {tr('🏆 &nbsp;Операционная прибыль', oper_profit, total_revenue, 'pnl-bold pnl-div', color_val(oper_profit))}
+
+  {tax_detail}
+  {tr('💸 &nbsp;Налоги', -below_total, total_revenue, 'pnl-div', '#D97706') if below_total else ''}
+
+  {tr('💰 &nbsp;Чистая прибыль', net_profit, total_revenue, 'pnl-result pnl-div', color_val(net_profit))}
 </table>
 </div>
 """
@@ -580,16 +590,15 @@ with tab5:
     plan_exp    = get_plan('expenses')
     plan_below  = get_plan('below_line')
     plan_mgmt   = get_plan('mgmt')
-    plan_total_exp = plan_sal + plan_exp + plan_below + plan_mgmt
+    plan_total_exp = plan_sal + plan_exp + plan_below
     plan_profit = plan_rev - plan_total_exp
 
     # Факт (уже рассчитан выше)
-    fact_rev   = total_revenue
-    fact_sal   = total_sal
-    fact_exp   = total_oper_exp_raw
-    fact_below = below_total
-    fact_mgmt  = float(mgmt_expenses)
-    fact_profit = final_result
+    fact_rev    = total_revenue
+    fact_sal    = total_sal
+    fact_exp    = total_oper_exp_raw
+    fact_below  = below_total
+    fact_profit = net_profit
 
     def var(fact, plan, invert=False):
         """Отклонение: + хорошо, - плохо. invert=True для расходов."""
@@ -615,12 +624,11 @@ with tab5:
 
     rows_pnl = []
     items = [
-        ('💚 Выручка',              fact_rev,   plan_rev,   False),
-        ('👥 ФОТ',                  fact_sal,   plan_sal,   True),
-        ('🔴 Операц. расходы',      fact_exp,   plan_exp,   True),
-        ('💸 Налоги и фин.',        fact_below, plan_below, True),
-        ('👔 Расходы руководителей',fact_mgmt,  plan_mgmt,  True),
-        ('✅ Итог к распределению', fact_profit,plan_profit,False),
+        ('💚 Выручка',          fact_rev,    plan_rev,    False),
+        ('👥 ФОТ',              fact_sal,    plan_sal,    True),
+        ('🔴 Операц. расходы',  fact_exp,    plan_exp,    True),
+        ('💸 Налоги',           fact_below,  plan_below,  True),
+        ('💰 Чистая прибыль',   fact_profit, plan_profit, False),
     ]
     for label, fact, plan, invert in items:
         delta, pct = var(fact, plan, invert)
