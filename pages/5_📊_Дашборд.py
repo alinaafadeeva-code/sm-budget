@@ -33,10 +33,15 @@ rev_df = load_revenue()
 sal_df = load_salaries()
 
 # Нормализация категорий: для баров код 17 (Прочие расходы) → 15 (Продукты для бара)
-# Бухгалтер может ставить 17 вместо 15 — исправляем автоматически
+# Актуально до июня 2026 — с 01.06.2026 бухгалтер проставляет правильные коды
 _BAR_STUDIOS = {'БАР ПК2', 'БАР ТЛ', 'БАР ЛЖ'}
 if not exp_df.empty:
-    _bar_mask = exp_df['studio'].isin(_BAR_STUDIOS) & (exp_df['category_code'] == 17)
+    _bar_mask = (
+        exp_df['studio'].isin(_BAR_STUDIOS) &
+        (exp_df['category_code'] == 17) &
+        ~((exp_df['year'] == 2026) & (exp_df['month'] >= 6)) &
+        ~(exp_df['year'] > 2026)
+    )
     exp_df.loc[_bar_mask, 'category_code'] = 15
 
 if exp_df.empty and rev_df.empty:
