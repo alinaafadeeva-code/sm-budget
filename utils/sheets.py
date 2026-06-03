@@ -88,11 +88,16 @@ def save_expenses(records: list, replace: bool = True):
                     (df['month'].astype(str) == str(month))
                 )
             if mask.any():
+                keep = df[~mask]
+                # Безопасная перезапись: сначала готовим новые данные,
+                # потом один раз очищаем и записываем всё вместе
+                new_rows = [[r.get(h, '') for h in EXPENSE_HEADERS] for r in records]
+                all_rows = (keep.values.tolist() if not keep.empty else []) + new_rows
                 ws.clear()
                 ws.append_row(EXPENSE_HEADERS)
-                keep = df[~mask]
-                if not keep.empty:
-                    ws.append_rows(keep.values.tolist(), value_input_option='RAW')
+                if all_rows:
+                    ws.append_rows(all_rows, value_input_option='RAW')
+                return  # уже записали новые данные выше
 
     rows = [[r.get(h, '') for h in EXPENSE_HEADERS] for r in records]
     ws.append_rows(rows, value_input_option='RAW')
