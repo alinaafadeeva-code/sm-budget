@@ -14,110 +14,111 @@ from utils.mappings import (
 from utils.ui import sidebar_period
 
 st.set_page_config(page_title='Дашборд', page_icon='📊', layout='wide')
-st.title('📊 Дашборд')
+
+# ── CSS ────────────────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+.kpi-card {
+    border-radius: 14px; padding: 20px 16px; text-align: center;
+    box-shadow: 0 3px 12px rgba(0,0,0,.09); margin-bottom: 4px;
+}
+.kpi-label { font-size: 11px; font-weight: 700; letter-spacing: .7px;
+             text-transform: uppercase; margin: 0 0 8px; opacity: .82; }
+.kpi-value { font-size: 28px; font-weight: 800; margin: 0 0 4px; line-height: 1.1; }
+.kpi-pct   { font-size: 13px; margin: 0; opacity: .85; font-weight: 600; }
+
+.pnl-wrap  { background: #FAFAFA; border-radius: 14px; padding: 20px 24px;
+             box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+.pnl-table { width:100%; border-collapse:collapse; font-size:14px; }
+.pnl-table td { padding: 5px 8px; vertical-align:middle; }
+.pnl-table td:last-child { text-align:right; font-weight:600; min-width:110px; }
+.pnl-table td:nth-child(2) { text-align:right; color:#6B7280; font-size:13px; min-width:48px; }
+.pnl-sub  td { color:#9CA3AF; font-size:13px; }
+.pnl-sub  td:first-child { padding-left:28px; }
+.pnl-div  td { border-top: 1.5px solid #E5E7EB; padding-top: 8px; margin-top: 4px; }
+.pnl-bold td { font-weight:700; font-size:15px; }
+.pnl-result td { font-weight:800; font-size:16px; background:#ECFDF5;
+                 border-radius:8px; padding:8px 10px; }
+</style>
+""", unsafe_allow_html=True)
 
 
+# ── Хелперы ────────────────────────────────────────────────────────────────────
 def fmt(val):
-    if val >= 1_000_000:
+    if abs(val) >= 1_000_000:
         return f'{val/1_000_000:.1f} млн ₽'
     return f'{val:,.0f} ₽'.replace(',', ' ')
 
+def fmt_short(val):
+    if abs(val) >= 1_000_000:
+        return f'{val/1_000_000:.1f} млн'
+    return f'{val:,.0f}'.replace(',', ' ')
 
-def fmt_delta(val):
-    sign = '+' if val >= 0 else ''
-    return f'{sign}{val/1_000_000:.1f} млн ₽' if abs(val) >= 1_000_000 else f'{sign}{val:,.0f} ₽'.replace(',', ' ')
+def pct_str(val, total):
+    if not total:
+        return '—'
+    return f'{val / total * 100:.1f}%'
+
+def kpi_card(label, value, sub=None, bg='#1E3A5F', fg='#FFFFFF'):
+    s_html = f'<p class="kpi-pct" style="color:{fg};">{sub}</p>' if sub else ''
+    return (f'<div class="kpi-card" style="background:{bg};">'
+            f'<p class="kpi-label" style="color:{fg};">{label}</p>'
+            f'<p class="kpi-value" style="color:{fg};">{value}</p>'
+            f'{s_html}</div>')
 
 
+# ── Загрузка данных ────────────────────────────────────────────────────────────
 exp_df = load_expenses()
 rev_df = load_revenue()
 sal_df = load_salaries()
 
-# ── Ремаппинг категорий для данных января–мая 2026 ───────────────────────────
-# До июня 2026 бухгалтер использовал другую нумерацию статей.
-# С 01.06.2026 — текущая нумерация (mappings.py).
-# Коды 1–8 и 42–46 совпадают в обеих системах, коды 9–41 — сдвинуты.
+# Ремаппинг категорий для данных января–мая 2026
 _CAT_MAP_JAN_MAY_2026 = {
-     9: 41,  # Хоз. принадлежности
-    10: 40,  # Малоценные
-    11:  9,  # Средства личной гигиены
-    12: 10,  # Расходные материалы
-    13: 11,  # Реклама
-    14: 12,  # Бухгалтерское обслуживание
-    15: 13,  # Эквайринг
-    16: 14,  # Химчистка полотенец
-    17: 15,  # Продукты для бара
-    18: 16,  # Прочие услуги
-    19: 17,  # Прочие расходы
-    20: 18,  # Лизинг/кредит
-    21: 19,  # Инвест расходы
-    22: 20,  # Форма персонал
-    23: 21,  # Спортивный инвентарь
-    24: 22,  # Офисные расходы
-    25: 23,  # Регистрация/снятие ккм/ккт
-    26: 24,  # Возврат займа
-    27: 25,  # Инвест займы
-    28: 26,  # ТО и ремонт
-    29: 27,  # Монтаж и установка оборудования
-    30: 28,  # Мелкое оборудование
-    31: 29,  # Оборудование
-    32: 30,  # Оборудование орг техника
-    33: 31,  # Вывоз мусора
-    34: 32,  # РАО и ВОИС
-    35: 33,  # Транспортные расходы
-    36: 34,  # Корпоративные расходы
-    37: 35,  # HR (вакансии)
-    38: 36,  # Программное обеспечение
-    39: 37,  # Юр расходы
-    40: 38,  # Цветы, украшение студий
-    41: 39,  # Полиграфия
+     9: 41,  10: 40,  11:  9,  12: 10,  13: 11,  14: 12,
+    15: 13,  16: 14,  17: 15,  18: 16,  19: 17,  20: 18,
+    21: 19,  22: 20,  23: 21,  24: 22,  25: 23,  26: 24,
+    27: 25,  28: 26,  29: 27,  30: 28,  31: 29,  32: 30,
+    33: 31,  34: 32,  35: 33,  36: 34,  37: 35,  38: 36,
+    39: 37,  40: 38,  41: 39,
 }
 if not exp_df.empty:
-    _old_period = (exp_df['year'] == 2026) & (exp_df['month'] <= 5)
-    _remap = _old_period & exp_df['category_code'].isin(_CAT_MAP_JAN_MAY_2026)
-    exp_df.loc[_remap, 'category_code'] = (
-        exp_df.loc[_remap, 'category_code'].map(_CAT_MAP_JAN_MAY_2026)
-    )
+    _old = (exp_df['year'] == 2026) & (exp_df['month'] <= 5)
+    _rm  = _old & exp_df['category_code'].isin(_CAT_MAP_JAN_MAY_2026)
+    exp_df.loc[_rm, 'category_code'] = exp_df.loc[_rm, 'category_code'].map(_CAT_MAP_JAN_MAY_2026)
 
 if exp_df.empty and rev_df.empty:
-    st.info('Данных пока нет. Загрузи реестры платежей и введи доходы.')
+    st.info('Данных пока нет. Загрузи реестры и введи доходы.')
     st.stop()
 
 
-# ── Фильтры и настройки ────────────────────────────────────────────────────────
+# ── Сайдбар ────────────────────────────────────────────────────────────────────
 year, month = sidebar_period()
 
 with st.sidebar:
-    st.header('Дополнительно')
+    st.header('Фильтры')
     view_mode = st.radio('Период', ['Месяц', 'С начала года (YTD)'])
-
     if view_mode == 'Месяц':
         months_range = [month]
     else:
-        max_month = st.slider(
-            'По месяц включительно', 1, 12,
-            value=month,
-            format=lambda x: MONTHS_RU[x],
-        )
+        max_month = st.slider('По месяц включительно', 1, 12, value=month,
+                              format=lambda x: MONTHS_RU[x])
         months_range = list(range(1, max_month + 1))
 
     studio_filter = st.selectbox(
-        'Студия',
-        ['Все'] + list(STUDIO_CODES.keys()),
+        'Студия', ['Все'] + list(STUDIO_CODES.keys()),
         format_func=lambda x: 'Все студии' if x == 'Все' else STUDIO_CODES[x],
     )
     entity_filter = st.selectbox(
-        'Юрлицо',
-        ['Все'] + list(ENTITY_NAMES.keys()),
+        'Юрлицо', ['Все'] + list(ENTITY_NAMES.keys()),
         format_func=lambda x: 'Все' if x == 'Все' else f'{x} — {ENTITY_NAMES[x]}',
     )
 
     st.divider()
     st.markdown('**👔 Расходы руководителей**')
     mgmt_expenses = st.number_input(
-        'Сумма, ₽',
-        min_value=0, step=10_000,
+        '', min_value=0, step=10_000,
         key=f'mgmt_exp_{year}_{"-".join(map(str, months_range))}',
-        help='Вычитаются из чистой прибыли → итог к распределению',
+        help='Вычитаются из чистой прибыли',
         label_visibility='collapsed',
     )
 
@@ -133,21 +134,18 @@ def filter_df(df):
         mask &= df['entity'] == entity_filter
     return df[mask].copy()
 
-
 exp_f = filter_df(exp_df)
 rev_f = filter_df(rev_df)
 sal_f = filter_df(sal_df)
 
-# ── Разбивка расходов по уровням P&L ──────────────────────────────────────────
-# Полностью исключены: переводы, займы (не расходы)
+# ── Уровни P&L ─────────────────────────────────────────────────────────────────
 FULLY_EXCLUDED  = {0, 24, 25, 27}
-# Ниже операц. прибыли: налоги, инвест расходы, проценты
 BELOW_LINE_CATS = {19, 43, 44, 45}
 
 if not exp_f.empty:
     exp_f_oper  = exp_f[~exp_f['category_code'].isin(FULLY_EXCLUDED | BELOW_LINE_CATS)]
     exp_f_below = exp_f[exp_f['category_code'].isin(BELOW_LINE_CATS)]
-    exp_f_show  = exp_f[~exp_f['category_code'].isin(FULLY_EXCLUDED)]  # для графиков
+    exp_f_show  = exp_f[~exp_f['category_code'].isin(FULLY_EXCLUDED)]
 else:
     exp_f_oper = exp_f_below = exp_f_show = pd.DataFrame()
 
@@ -156,169 +154,285 @@ if not rev_f.empty:
     acq_by_studio = rev_f.groupby('studio')['amount'].sum().mul(ACQUIRING_RATE).round(2)
     total_acquiring = acq_by_studio.sum()
 else:
-    acq_by_studio = pd.Series(dtype=float)
+    acq_by_studio  = pd.Series(dtype=float)
     total_acquiring = 0.0
 
-# ── P&L расчёт ────────────────────────────────────────────────────────────────
-total_revenue  = rev_f['amount'].sum()         if not rev_f.empty      else 0.0
-total_oper_exp = (
-    (exp_f_oper['amount'].sum() if not exp_f_oper.empty else 0.0) +
-    (sal_f['amount'].sum()      if not sal_f.empty      else 0.0) +
-    total_acquiring
-)
-oper_profit  = total_revenue - total_oper_exp
-oper_margin  = (oper_profit / total_revenue * 100) if total_revenue > 0 else 0.0
+# ── Расчёт P&L ─────────────────────────────────────────────────────────────────
+total_revenue  = rev_f['amount'].sum()  if not rev_f.empty  else 0.0
+total_sal      = sal_f['amount'].sum()  if not sal_f.empty  else 0.0
+total_oper_exp_raw = exp_f_oper['amount'].sum() if not exp_f_oper.empty else 0.0
+total_oper_exp = total_oper_exp_raw + total_sal + total_acquiring
 
+oper_profit  = total_revenue - total_oper_exp
+oper_margin  = oper_profit / total_revenue * 100 if total_revenue else 0.0
 below_total  = exp_f_below['amount'].sum() if not exp_f_below.empty else 0.0
 net_profit   = oper_profit - below_total
-net_margin   = (net_profit / total_revenue * 100) if total_revenue > 0 else 0.0
-
+net_margin   = net_profit / total_revenue * 100 if total_revenue else 0.0
 final_result = net_profit - mgmt_expenses
-final_margin = (final_result / total_revenue * 100) if total_revenue > 0 else 0.0
+final_margin = final_result / total_revenue * 100 if total_revenue else 0.0
 
-period_label = (
-    MONTHS_RU[months_range[0]] if len(months_range) == 1
-    else f'Январь – {MONTHS_RU[months_range[-1]]}'
-)
+period_label = (MONTHS_RU[months_range[0]] if len(months_range) == 1
+                else f'Январь – {MONTHS_RU[months_range[-1]]}')
 
-
-# ── KPI: Операционный уровень ──────────────────────────────────────────────────
-st.subheader(f'{period_label} {year}')
+# ══════════════════════════════════════════════════════════════════════════════
+# РАЗДЕЛ 1: KPI-карточки
+# ══════════════════════════════════════════════════════════════════════════════
+st.markdown(f'### {period_label} {year}')
 
 c1, c2, c3, c4 = st.columns(4)
-c1.metric('💚 Доходы', fmt(total_revenue))
-c2.metric('🔴 Операц. расходы', fmt(total_oper_exp),
-          help=f'Включает эквайринг {ACQUIRING_RATE*100:.0f}% = {fmt(total_acquiring)}')
-c3.metric('🏆 Операц. прибыль', fmt(oper_profit),
-          delta=f'{oper_margin:.1f}% маржа',
-          delta_color='normal' if oper_profit >= 0 else 'inverse')
-c4.metric('📉 Операц. маржа', f'{oper_margin:.0f}%' if total_revenue > 0 else '—')
 
-# ── KPI: Чистая прибыль ────────────────────────────────────────────────────────
-st.divider()
+with c1:
+    st.markdown(kpi_card(
+        '💚 ВЫРУЧКА', fmt(total_revenue),
+        bg='#065F46', fg='#ECFDF5',
+    ), unsafe_allow_html=True)
 
-# Разбивка "ниже линии"
-below_items = []
+with c2:
+    margin_color = '#92400E' if oper_profit < total_revenue * 0.2 else '#1E40AF'
+    bg_color     = '#EFF6FF' if oper_profit >= 0 else '#FEF2F2'
+    fg_color     = '#1E40AF' if oper_profit >= 0 else '#991B1B'
+    st.markdown(kpi_card(
+        '🏆 ОПЕРАЦ. ПРИБЫЛЬ', fmt(oper_profit),
+        sub=f'маржа {fmt_pct(oper_margin, 1)}' if total_revenue else None,
+        bg=bg_color, fg=fg_color,
+    ), unsafe_allow_html=True)
+
+with c3:
+    fg3 = '#065F46' if net_profit >= 0 else '#991B1B'
+    bg3 = '#ECFDF5' if net_profit >= 0 else '#FEF2F2'
+    st.markdown(kpi_card(
+        '💰 ЧИСТАЯ ПРИБЫЛЬ', fmt(net_profit),
+        sub=pct_str(net_profit, total_revenue),
+        bg=bg3, fg=fg3,
+    ), unsafe_allow_html=True)
+
+with c4:
+    fg4 = '#1F2937' if final_result >= 0 else '#991B1B'
+    bg4 = '#F9FAFB' if final_result >= 0 else '#FEF2F2'
+    st.markdown(kpi_card(
+        '✅ ИТОГ К РАСПРЕДЕЛЕНИЮ', fmt(final_result),
+        sub=pct_str(final_result, total_revenue),
+        bg=bg4, fg=fg4,
+    ), unsafe_allow_html=True)
+
+st.markdown('<br>', unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# РАЗДЕЛ 2: P&L таблица
+# ══════════════════════════════════════════════════════════════════════════════
+def tr(label, amount, total, cls='', color=''):
+    pct = pct_str(amount, total)
+    neg = amount < 0
+    val_fmt = ('(' + fmt(abs(amount)) + ')') if neg else fmt(amount)
+    style = f'style="color:{color};"' if color else ''
+    return (f'<tr class="{cls}">'
+            f'<td {style}>{label}</td>'
+            f'<td>{pct}</td>'
+            f'<td {style}>{val_fmt}</td></tr>')
+
+# Разбивка налогов и фин расходов
+below_detail = ''
 if not exp_f_below.empty:
-    exp_f_below2 = exp_f_below.copy()
-    exp_f_below2['cat_name'] = exp_f_below2['category_code'].map(
+    tmp = exp_f_below.copy()
+    tmp['cat'] = tmp['category_code'].map(
         lambda x: ALL_EXPENSE_CATEGORIES.get(int(x), f'Статья {x}') if pd.notna(x) else '?'
     )
-    for cat, grp in exp_f_below2.groupby('cat_name'):
-        below_items.append(f'{cat}: {fmt(grp["amount"].sum())}')
+    for cat, grp in tmp.groupby('cat'):
+        a = grp['amount'].sum()
+        below_detail += tr(f'&nbsp;&nbsp;&nbsp;{cat}', -a, total_revenue, 'pnl-sub', '#9CA3AF')
 
-c5, c6, c7, c8 = st.columns(4)
-c5.metric(
-    '💸 Налоги и фин. расходы', fmt(below_total),
-    help='\n'.join(below_items) if below_items else 'Нет данных',
-)
-c6.metric('👔 Расходы руководителей', fmt(mgmt_expenses))
-c7.metric('💰 Чистая прибыль', fmt(net_profit),
-          delta=f'{net_margin:.1f}% маржа',
-          delta_color='normal' if net_profit >= 0 else 'inverse')
-c8.metric('✅ Итог к распределению', fmt(final_result),
-          delta=f'{final_margin:.1f}%',
-          delta_color='normal' if final_result >= 0 else 'inverse')
+pnl_html = f"""
+<div class="pnl-wrap">
+<table class="pnl-table">
+  <colgroup><col style="width:55%"><col style="width:15%"><col style="width:30%"></colgroup>
+  {tr('💚 Выручка', total_revenue, total_revenue, color='#065F46')}
+  <tr class="pnl-sub"><td style="padding-left:28px;color:#9CA3AF;">ФОТ</td>
+    <td style="color:#9CA3AF;">{pct_str(total_sal, total_revenue)}</td>
+    <td style="color:#9CA3AF;">({fmt(total_sal)})</td></tr>
+  <tr class="pnl-sub"><td style="padding-left:28px;color:#9CA3AF;">Операц. затраты</td>
+    <td style="color:#9CA3AF;">{pct_str(total_oper_exp_raw, total_revenue)}</td>
+    <td style="color:#9CA3AF;">({fmt(total_oper_exp_raw)})</td></tr>
+  <tr class="pnl-sub"><td style="padding-left:28px;color:#9CA3AF;">Эквайринг {int(ACQUIRING_RATE*100)}%</td>
+    <td style="color:#9CA3AF;">{pct_str(total_acquiring, total_revenue)}</td>
+    <td style="color:#9CA3AF;">({fmt(total_acquiring)})</td></tr>
+  {tr('🔴 Итого операц. расходы', -total_oper_exp, total_revenue, 'pnl-div', '#DC2626')}
+  {tr('🏆 Операционная прибыль', oper_profit, total_revenue, 'pnl-bold pnl-div',
+      '#1D4ED8' if oper_profit >= 0 else '#DC2626')}
+  {below_detail}
+  {tr('💸 Налоги и фин. расходы', -below_total, total_revenue, 'pnl-sub', '#D97706') if below_total else ''}
+  {tr('💰 Чистая прибыль', net_profit, total_revenue, 'pnl-bold pnl-div',
+      '#065F46' if net_profit >= 0 else '#DC2626')}
+  {tr('👔 Расходы руководителей', -mgmt_expenses, total_revenue, 'pnl-sub', '#6B7280') if mgmt_expenses else ''}
+  {tr('✅ Итог к распределению', final_result, total_revenue, 'pnl-result pnl-div',
+      '#065F46' if final_result >= 0 else '#DC2626')}
+</table>
+</div>
+"""
+
+left_col, right_col = st.columns([3, 2])
+
+with left_col:
+    st.markdown('**P&L — отчёт о прибылях и убытках**')
+    st.markdown(pnl_html, unsafe_allow_html=True)
+
+with right_col:
+    st.markdown('**Структура расходов**')
+    all_exp_show_pie = pd.concat(
+        [d for d in [exp_f_show, sal_f] if not d.empty], ignore_index=True
+    ) if (not exp_f_show.empty or not sal_f.empty) else pd.DataFrame()
+
+    if not all_exp_show_pie.empty or total_acquiring > 0:
+        if not all_exp_show_pie.empty:
+            all_exp_show_pie['cat'] = all_exp_show_pie['category_code'].map(
+                lambda x: ALL_EXPENSE_CATEGORIES.get(int(x), f'Статья {x}') if pd.notna(x) else 'Прочее'
+            )
+            pie_data = all_exp_show_pie.groupby('cat')['amount'].sum().reset_index()
+        else:
+            pie_data = pd.DataFrame(columns=['cat', 'amount'])
+
+        if total_acquiring > 0:
+            pie_data = pd.concat([pie_data, pd.DataFrame([{
+                'cat': f'Эквайринг {int(ACQUIRING_RATE*100)}%', 'amount': total_acquiring
+            }])], ignore_index=True)
+
+        pie_data = pie_data[pie_data['amount'] > 0].sort_values('amount', ascending=False)
+        # Группируем мелкие статьи в "Прочее" если их больше 10
+        if len(pie_data) > 10:
+            top = pie_data.head(9).copy()
+            other_sum = pie_data.iloc[9:]['amount'].sum()
+            top = pd.concat([top, pd.DataFrame([{'cat': 'Прочее', 'amount': other_sum}])],
+                            ignore_index=True)
+            pie_data = top
+
+        fig_pie = px.pie(
+            pie_data, values='amount', names='cat',
+            hole=0.45,
+            color_discrete_sequence=px.colors.qualitative.Set3,
+        )
+        fig_pie.update_traces(
+            textposition='inside', textinfo='percent',
+            hovertemplate='<b>%{label}</b><br>%{value:,.0f} ₽<br>%{percent}<extra></extra>',
+        )
+        fig_pie.update_layout(
+            height=340, margin=dict(t=0, b=0, l=0, r=0),
+            legend=dict(orientation='v', font=dict(size=11)),
+            showlegend=True,
+        )
+        st.plotly_chart(fig_pie, use_container_width=True)
+    else:
+        st.info('Нет данных')
 
 st.divider()
 
-
-# ── Вкладки ────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4 = st.tabs(['По студиям', 'По статьям', 'Динамика', 'Сводная таблица'])
-
+# ══════════════════════════════════════════════════════════════════════════════
+# ВКЛАДКИ
+# ══════════════════════════════════════════════════════════════════════════════
+tab1, tab2, tab3, tab4 = st.tabs(['📍 По студиям', '📋 По статьям', '📈 Динамика', '🗂 Сводная'])
 
 # ══ Вкладка 1: По студиям ══════════════════════════════════════════════════════
 with tab1:
-    # P&L по студиям использует только операционные расходы
-    all_exp_oper = pd.concat([d for d in [exp_f_oper, sal_f] if not d.empty], ignore_index=True) \
-        if (not exp_f_oper.empty or not sal_f.empty) else pd.DataFrame()
+    all_exp_oper = pd.concat(
+        [d for d in [exp_f_oper, sal_f] if not d.empty], ignore_index=True
+    ) if (not exp_f_oper.empty or not sal_f.empty) else pd.DataFrame()
 
-    col_left, col_right = st.columns(2)
-
-    with col_left:
-        st.markdown('**Расходы по студиям (операционные)**')
-        if not all_exp_oper.empty:
-            exp_by_studio = (
-                all_exp_oper[all_exp_oper['studio'].isin(STUDIO_CODES)]
-                .groupby('studio')['amount'].sum()
-            )
-            exp_by_studio = exp_by_studio.add(acq_by_studio, fill_value=0).reset_index()
-            exp_by_studio.columns = ['studio', 'amount']
-            exp_by_studio['studio_name'] = exp_by_studio['studio'].map(STUDIO_CODES)
-            exp_by_studio = exp_by_studio.dropna(subset=['studio_name']).sort_values('amount', ascending=True)
-            fig = px.bar(exp_by_studio, x='amount', y='studio_name', orientation='h',
-                         color='amount', color_continuous_scale='Reds',
-                         labels={'amount': 'Сумма ₽', 'studio_name': ''})
-            fig.update_layout(showlegend=False, coloraxis_showscale=False, height=400)
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info('Нет данных')
-
-    with col_right:
-        st.markdown('**Доходы по студиям**')
-        if not rev_f.empty:
-            rev_by_studio = rev_f.groupby('studio')['amount'].sum().reset_index()
-            rev_by_studio['studio_name'] = rev_by_studio['studio'].map(lambda x: STUDIO_CODES.get(x, x))
-            rev_by_studio = rev_by_studio.sort_values('amount', ascending=True)
-            fig2 = px.bar(rev_by_studio, x='amount', y='studio_name', orientation='h',
-                          color='amount', color_continuous_scale='Greens',
-                          labels={'amount': 'Сумма ₽', 'studio_name': ''})
-            fig2.update_layout(showlegend=False, coloraxis_showscale=False, height=400)
-            st.plotly_chart(fig2, use_container_width=True)
-        else:
-            st.info('Нет данных')
-
-    st.markdown('**P&L по студиям (операционный)**')
-    if not rev_f.empty and not all_exp_oper.empty:
-        rev_s = rev_f.groupby('studio')['amount'].sum()
-        exp_s = all_exp_oper[all_exp_oper['studio'].isin(STUDIO_CODES)].groupby('studio')['amount'].sum()
+    if not rev_f.empty or not all_exp_oper.empty:
+        rev_s = rev_f.groupby('studio')['amount'].sum() if not rev_f.empty else pd.Series(dtype=float)
+        exp_s = (all_exp_oper[all_exp_oper['studio'].isin(STUDIO_CODES)]
+                 .groupby('studio')['amount'].sum()
+                 if not all_exp_oper.empty else pd.Series(dtype=float))
         exp_s = exp_s.add(acq_by_studio, fill_value=0)
-        pnl_rows = []
-        for s in set(rev_s.index) | set(exp_s.index):
+
+        studios = sorted(set(rev_s.index) | set(exp_s.index),
+                         key=lambda s: rev_s.get(s, 0), reverse=True)
+        rows = []
+        for s in studios:
+            if s not in STUDIO_CODES:
+                continue
             r = rev_s.get(s, 0)
             e = exp_s.get(s, 0)
-            pnl_rows.append({'studio': STUDIO_CODES.get(s, s), 'Доходы': r, 'Расходы': e, 'Прибыль': r - e})
-        pnl_df = pd.DataFrame(pnl_rows).sort_values('Прибыль', ascending=False)
-        fig3 = go.Figure()
-        fig3.add_bar(name='Доходы',  x=pnl_df['studio'], y=pnl_df['Доходы'],  marker_color='#10B981')
-        fig3.add_bar(name='Расходы', x=pnl_df['studio'], y=pnl_df['Расходы'], marker_color='#EF4444')
-        fig3.update_layout(barmode='group', height=380, xaxis_tickangle=-30)
-        st.plotly_chart(fig3, use_container_width=True)
+            p = r - e
+            rows.append({
+                'Студия': STUDIO_CODES[s],
+                'Выручка': r, 'Расходы': e, 'Прибыль': p,
+                'Маржа': f'{p/r*100:.0f}%' if r > 0 else '—',
+            })
+
+        pnl_df = pd.DataFrame(rows)
+        if not pnl_df.empty:
+            # Grouped bar chart
+            fig_studios = go.Figure()
+            fig_studios.add_bar(
+                name='Выручка', x=pnl_df['Студия'], y=pnl_df['Выручка'],
+                marker_color='#10B981',
+                text=[fmt_short(v) for v in pnl_df['Выручка']],
+                textposition='outside', textfont_size=11,
+            )
+            fig_studios.add_bar(
+                name='Расходы', x=pnl_df['Студия'], y=pnl_df['Расходы'],
+                marker_color='#EF4444',
+                text=[fmt_short(v) for v in pnl_df['Расходы']],
+                textposition='outside', textfont_size=11,
+            )
+            fig_studios.add_bar(
+                name='Прибыль', x=pnl_df['Студия'], y=pnl_df['Прибыль'],
+                marker_color='#3B82F6',
+                text=[fmt_short(v) for v in pnl_df['Прибыль']],
+                textposition='outside', textfont_size=11,
+            )
+            fig_studios.update_layout(
+                barmode='group', height=380,
+                xaxis_tickangle=-30, yaxis_title='₽',
+                legend=dict(orientation='h', yanchor='bottom', y=1.02),
+                margin=dict(t=40, b=60),
+            )
+            st.plotly_chart(fig_studios, use_container_width=True)
+
+            # Таблица P&L по студиям
+            display_df = pnl_df.copy()
+            for col in ['Выручка', 'Расходы', 'Прибыль']:
+                display_df[col] = display_df[col].apply(fmt)
+            st.dataframe(display_df, hide_index=True, use_container_width=True)
+    else:
+        st.info('Нет данных')
 
 
 # ══ Вкладка 2: По статьям ══════════════════════════════════════════════════════
 with tab2:
-    # Показываем все значимые расходы (операц. + ниже линии)
-    all_exp_show = pd.concat([d for d in [exp_f_show, sal_f] if not d.empty], ignore_index=True) \
-        if (not exp_f_show.empty or not sal_f.empty) else pd.DataFrame()
+    all_exp_show = pd.concat(
+        [d for d in [exp_f_show, sal_f] if not d.empty], ignore_index=True
+    ) if (not exp_f_show.empty or not sal_f.empty) else pd.DataFrame()
 
     if not all_exp_show.empty or total_acquiring > 0:
         if not all_exp_show.empty:
-            all_exp_show['category_name'] = all_exp_show['category_code'].map(
-                lambda x: ALL_EXPENSE_CATEGORIES.get(int(x), f'Статья {x}') if pd.notna(x) else 'Без статьи'
+            all_exp_show['cat'] = all_exp_show['category_code'].map(
+                lambda x: ALL_EXPENSE_CATEGORIES.get(int(x), f'Статья {x}') if pd.notna(x) else 'Прочее'
             )
-            cat_sum = all_exp_show.groupby('category_name')['amount'].sum().reset_index()
+            cat_sum = all_exp_show.groupby('cat')['amount'].sum().reset_index()
         else:
-            cat_sum = pd.DataFrame(columns=['category_name', 'amount'])
+            cat_sum = pd.DataFrame(columns=['cat', 'amount'])
 
         if total_acquiring > 0:
-            acq_label = f'Эквайринг (расч. {ACQUIRING_RATE*100:.0f}%)'
-            cat_sum = pd.concat([cat_sum,
-                pd.DataFrame([{'category_name': acq_label, 'amount': total_acquiring}])
-            ], ignore_index=True)
+            cat_sum = pd.concat([cat_sum, pd.DataFrame([{
+                'cat': f'Эквайринг (расч. {int(ACQUIRING_RATE*100)}%)',
+                'amount': total_acquiring
+            }])], ignore_index=True)
 
-        cat_sum = cat_sum.sort_values('amount', ascending=False).head(20)
-        fig4 = px.bar(cat_sum.sort_values('amount', ascending=True),
-                      x='amount', y='category_name', orientation='h',
-                      color='amount', color_continuous_scale='Blues',
-                      labels={'amount': 'Сумма ₽', 'category_name': ''},
-                      title='Топ-20 статей расходов')
-        fig4.update_layout(height=600, coloraxis_showscale=False)
-        st.plotly_chart(fig4, use_container_width=True)
+        cat_sum = cat_sum[cat_sum['amount'] > 0].sort_values('amount', ascending=True).tail(20)
 
-        fig5 = px.pie(cat_sum, values='amount', names='category_name', title='Структура расходов')
-        fig5.update_layout(height=500)
-        st.plotly_chart(fig5, use_container_width=True)
+        fig_cat = px.bar(
+            cat_sum, x='amount', y='cat', orientation='h',
+            text=[fmt_short(v) for v in cat_sum['amount']],
+            color='amount', color_continuous_scale='Blues',
+            labels={'amount': '', 'cat': ''},
+        )
+        fig_cat.update_traces(textposition='outside', textfont_size=11)
+        fig_cat.update_layout(
+            height=max(400, len(cat_sum) * 30),
+            coloraxis_showscale=False,
+            margin=dict(l=10, r=80, t=20, b=20),
+            xaxis_title='',
+        )
+        st.plotly_chart(fig_cat, use_container_width=True)
     else:
         st.info('Нет данных о расходах')
 
@@ -328,7 +442,7 @@ with tab3:
     def monthly_series(df, label, exclude_cats=None):
         if df is None or df.empty:
             return pd.DataFrame(columns=['month', label])
-        mask = (df['year'] == year)
+        mask = df['year'] == year
         if studio_filter != 'Все':
             mask &= df['studio'] == studio_filter
         if entity_filter != 'Все':
@@ -340,127 +454,147 @@ with tab3:
         s.columns = ['month', label]
         return s
 
-    rev_monthly  = monthly_series(rev_df, 'Доходы')
-    exp_monthly  = monthly_series(exp_df, 'Операц. расходы', exclude_cats=FULLY_EXCLUDED | BELOW_LINE_CATS)
-    sal_monthly  = monthly_series(sal_df, 'ЗП')
-    blow_monthly = monthly_series(exp_df, 'Налоги и фин.', exclude_cats=
-                                  {c for c in range(100) if c not in BELOW_LINE_CATS})
+    rev_m   = monthly_series(rev_df, 'Доходы')
+    exp_m   = monthly_series(exp_df, 'Операц. расходы', exclude_cats=FULLY_EXCLUDED | BELOW_LINE_CATS)
+    sal_m   = monthly_series(sal_df, 'ЗП')
+    below_m = monthly_series(exp_df, 'Налоги и фин.',
+                              exclude_cats={c for c in range(100) if c not in BELOW_LINE_CATS})
 
     if not rev_df.empty:
-        rev_mask = (rev_df['year'] == year)
-        if studio_filter != 'Все':
-            rev_mask &= rev_df['studio'] == studio_filter
-        if entity_filter != 'Все':
-            rev_mask &= rev_df['entity'] == entity_filter
-        acq_monthly = (rev_df[rev_mask].groupby('month')['amount'].sum()
-                       .mul(ACQUIRING_RATE).round(2).reset_index())
-        acq_monthly.columns = ['month', 'Эквайринг']
+        rev_mask = rev_df['year'] == year
+        if studio_filter != 'Все': rev_mask &= rev_df['studio'] == studio_filter
+        if entity_filter != 'Все': rev_mask &= rev_df['entity'] == entity_filter
+        acq_m = (rev_df[rev_mask].groupby('month')['amount'].sum()
+                 .mul(ACQUIRING_RATE).round(2).reset_index())
+        acq_m.columns = ['month', 'Эквайринг']
     else:
-        acq_monthly = pd.DataFrame(columns=['month', 'Эквайринг'])
+        acq_m = pd.DataFrame(columns=['month', 'Эквайринг'])
 
-    months_all = pd.DataFrame({'month': list(range(1, 13))})
-    merged = months_all.merge(rev_monthly, on='month', how='left')
-    merged = merged.merge(exp_monthly, on='month', how='left')
-    merged = merged.merge(sal_monthly, on='month', how='left')
-    merged = merged.merge(acq_monthly, on='month', how='left')
-    merged = merged.merge(blow_monthly, on='month', how='left')
-    merged = merged.fillna(0)
-    merged['Операц. расходы всего'] = merged.get('Операц. расходы', 0) + merged.get('ЗП', 0) + merged.get('Эквайринг', 0)
-    merged['Операц. прибыль'] = merged['Доходы'] - merged['Операц. расходы всего']
-    merged['Чистая прибыль']  = merged['Операц. прибыль'] - merged.get('Налоги и фин.', 0)
-    merged['month_name'] = merged['month'].map(MONTHS_RU)
+    base = pd.DataFrame({'month': range(1, 13)})
+    for df_m in [rev_m, exp_m, sal_m, acq_m, below_m]:
+        base = base.merge(df_m, on='month', how='left')
+    base = base.fillna(0)
+    base['Всего расходы'] = (base.get('Операц. расходы', 0)
+                             + base.get('ЗП', 0)
+                             + base.get('Эквайринг', 0))
+    base['Опер. прибыль'] = base['Доходы'] - base['Всего расходы']
+    base['Чистая прибыль'] = base['Опер. прибыль'] - base.get('Налоги и фин.', 0)
+    base['Месяц'] = base['month'].map(MONTHS_RU)
 
-    fig6 = go.Figure()
-    fig6.add_scatter(x=merged['month_name'], y=merged['Доходы'],
-                     name='Доходы', line=dict(color='#10B981', width=2.5), mode='lines+markers')
-    fig6.add_scatter(x=merged['month_name'], y=merged['Операц. расходы всего'],
-                     name='Операц. расходы', line=dict(color='#EF4444', width=2.5), mode='lines+markers')
-    fig6.add_scatter(x=merged['month_name'], y=merged['Операц. прибыль'],
-                     name='Операц. прибыль', line=dict(color='#3B82F6', width=2, dash='dot'), mode='lines+markers')
-    fig6.add_scatter(x=merged['month_name'], y=merged['Чистая прибыль'],
-                     name='Чистая прибыль', line=dict(color='#8B5CF6', width=2, dash='dash'), mode='lines+markers')
-    fig6.update_layout(height=420, xaxis_title='', yaxis_title='₽', hovermode='x unified')
-    st.plotly_chart(fig6, use_container_width=True)
+    # Линейный график помесячно
+    fig_trend = go.Figure()
+    for name, color, dash in [
+        ('Доходы',        '#10B981', 'solid'),
+        ('Всего расходы', '#EF4444', 'solid'),
+        ('Опер. прибыль', '#3B82F6', 'dot'),
+        ('Чистая прибыль','#8B5CF6', 'dash'),
+    ]:
+        fig_trend.add_scatter(
+            x=base['Месяц'], y=base[name], name=name,
+            line=dict(color=color, width=2.5, dash=dash),
+            mode='lines+markers',
+            marker=dict(size=6),
+            hovertemplate=f'<b>{name}</b>: %{{y:,.0f}} ₽<extra></extra>',
+        )
+    fig_trend.update_layout(
+        height=400, xaxis_title='', yaxis_title='₽',
+        hovermode='x unified',
+        legend=dict(orientation='h', yanchor='bottom', y=1.02),
+        margin=dict(t=40),
+    )
+    st.plotly_chart(fig_trend, use_container_width=True)
 
-    merged['Доходы YTD']          = merged['Доходы'].cumsum()
-    merged['Операц. расходы YTD'] = merged['Операц. расходы всего'].cumsum()
-    merged['Чистая прибыль YTD']  = merged['Чистая прибыль'].cumsum()
+    # YTD накопительно (только если выбран YTD режим или всегда)
+    base['Доходы YTD']   = base['Доходы'].cumsum()
+    base['Расходы YTD']  = base['Всего расходы'].cumsum()
+    base['Прибыль YTD']  = base['Чистая прибыль'].cumsum()
 
-    fig7 = go.Figure()
-    fig7.add_scatter(x=merged['month_name'], y=merged['Доходы YTD'],
-                     name='Доходы YTD', line=dict(color='#10B981'), fill='tonexty')
-    fig7.add_scatter(x=merged['month_name'], y=merged['Операц. расходы YTD'],
-                     name='Расходы YTD', line=dict(color='#EF4444'))
-    fig7.add_scatter(x=merged['month_name'], y=merged['Чистая прибыль YTD'],
-                     name='Чистая прибыль YTD', line=dict(color='#8B5CF6', dash='dash'))
-    fig7.update_layout(height=350, title='Накопительный итог (YTD)', xaxis_title='')
-    st.plotly_chart(fig7, use_container_width=True)
+    fig_ytd = go.Figure()
+    fig_ytd.add_scatter(x=base['Месяц'], y=base['Доходы YTD'],   name='Доходы YTD',
+                        fill='tozeroy', fillcolor='rgba(16,185,129,.12)',
+                        line=dict(color='#10B981', width=2))
+    fig_ytd.add_scatter(x=base['Месяц'], y=base['Расходы YTD'],  name='Расходы YTD',
+                        line=dict(color='#EF4444', width=2))
+    fig_ytd.add_scatter(x=base['Месяц'], y=base['Прибыль YTD'],  name='Чистая прибыль YTD',
+                        line=dict(color='#8B5CF6', width=2, dash='dash'))
+    fig_ytd.update_layout(
+        height=300, title='Накопительно с начала года',
+        xaxis_title='', yaxis_title='₽',
+        legend=dict(orientation='h', yanchor='bottom', y=1.02),
+        margin=dict(t=50),
+    )
+    st.plotly_chart(fig_ytd, use_container_width=True)
 
 
-# ══ Вкладка 4: Сводная таблица ════════════════════════════════════════════════
+# ══ Вкладка 4: Сводная ════════════════════════════════════════════════════════
 with tab4:
-    st.markdown('**Расходы: статья × студия**')
-    all_exp_show2 = pd.concat([d for d in [exp_f_show, sal_f] if not d.empty], ignore_index=True) \
-        if (not exp_f_show.empty or not sal_f.empty) else pd.DataFrame()
+    col_exp, col_rev = st.columns(2)
 
-    if not all_exp_show2.empty or total_acquiring > 0:
-        if not all_exp_show2.empty:
-            all_exp_show2['category_name'] = all_exp_show2['category_code'].map(
-                lambda x: ALL_EXPENSE_CATEGORIES.get(int(x), f'Статья {x}') if pd.notna(x) else 'Без статьи'
+    with col_exp:
+        st.markdown('**Расходы: статья × студия**')
+        all_piv = pd.concat(
+            [d for d in [exp_f_show, sal_f] if not d.empty], ignore_index=True
+        ) if (not exp_f_show.empty or not sal_f.empty) else pd.DataFrame()
+
+        if not all_piv.empty or total_acquiring > 0:
+            if not all_piv.empty:
+                all_piv['cat'] = all_piv['category_code'].map(
+                    lambda x: ALL_EXPENSE_CATEGORIES.get(int(x), f'Статья {x}') if pd.notna(x) else 'Прочее'
+                )
+                all_piv['studio_name'] = all_piv['studio'].map(
+                    lambda s: STUDIO_CODES.get(s, 'Общие')
+                )
+                pivot = all_piv.pivot_table(
+                    index='cat', columns='studio_name',
+                    values='amount', aggfunc='sum', fill_value=0,
+                )
+            else:
+                pivot = pd.DataFrame()
+
+            if total_acquiring > 0:
+                acq_lbl = f'Эквайринг {int(ACQUIRING_RATE*100)}%'
+                acq_row = {STUDIO_CODES.get(s, s): round(v, 0)
+                           for s, v in acq_by_studio.items() if s in STUDIO_CODES}
+                adf = pd.DataFrame([acq_row], index=[acq_lbl])
+                if pivot.empty:
+                    pivot = adf
+                else:
+                    for col in adf.columns:
+                        if col not in pivot.columns:
+                            pivot[col] = 0
+                    pivot = pd.concat([pivot, adf.reindex(columns=pivot.columns, fill_value=0)])
+
+            if not pivot.empty:
+                pivot['ИТОГО'] = pivot.sum(axis=1)
+                pivot = pivot.sort_values('ИТОГО', ascending=False)
+                fmt_fn = lambda x: f'{x:,.0f}'.replace(',', ' ')
+                try:
+                    styled = pivot.style.format(fmt_fn).background_gradient(
+                        cmap='Reds', subset=[c for c in pivot.columns if c != 'ИТОГО'])
+                    st.dataframe(styled, use_container_width=True, height=500)
+                except Exception:
+                    st.dataframe(pivot.applymap(fmt_fn), use_container_width=True, height=500)
+        else:
+            st.info('Нет данных')
+
+    with col_rev:
+        st.markdown('**Доходы: категория × студия**')
+        if not rev_f.empty:
+            rev_piv = rev_f.copy()
+            rev_piv['cat'] = rev_piv['category_code'].map(
+                lambda x: REVENUE_CATEGORIES.get(int(x), f'Кат. {x}') if pd.notna(x) else 'Прочее'
             )
-            # Нераспределённые расходы (ОБЩ СЕТЬ и т.п.) показываем в колонке «Общие»
-            all_exp_show2['studio_name'] = all_exp_show2['studio'].map(
-                lambda s: STUDIO_CODES.get(s, 'Общие')
-            )
-            pivot = all_exp_show2.pivot_table(
-                index='category_name', columns='studio_name',
+            rev_piv['studio_name'] = rev_piv['studio'].map(lambda s: STUDIO_CODES.get(s, s))
+            pivot2 = rev_piv.pivot_table(
+                index='cat', columns='studio_name',
                 values='amount', aggfunc='sum', fill_value=0,
             )
-        else:
-            pivot = pd.DataFrame()
-
-        if total_acquiring > 0:
-            acq_label = f'Эквайринг (расч. {ACQUIRING_RATE*100:.0f}%)'
-            acq_row = {STUDIO_CODES.get(s, s): round(v, 0) for s, v in acq_by_studio.items() if s in STUDIO_CODES}
-            acq_df = pd.DataFrame([acq_row], index=[acq_label])
-            if pivot.empty:
-                pivot = acq_df
-            else:
-                for col in acq_df.columns:
-                    if col not in pivot.columns:
-                        pivot[col] = 0
-                pivot = pd.concat([pivot, acq_df.reindex(columns=pivot.columns, fill_value=0)])
-
-        if not pivot.empty:
-            pivot['ИТОГО'] = pivot.sum(axis=1)
-            pivot = pivot.sort_values('ИТОГО', ascending=False)
-            fmt_fn = lambda x: f'{x:,.0f}'.replace(',', ' ')
+            pivot2['ИТОГО'] = pivot2.sum(axis=1)
+            fmt_fn2 = lambda x: f'{x:,.0f}'.replace(',', ' ')
             try:
-                styled = pivot.style.format(fmt_fn).background_gradient(
-                    cmap='Reds', subset=[c for c in pivot.columns if c != 'ИТОГО'])
-                st.dataframe(styled, use_container_width=True, height=500)
+                styled2 = pivot2.style.format(fmt_fn2).background_gradient(cmap='Greens')
+                st.dataframe(styled2, use_container_width=True, height=500)
             except Exception:
-                _map = getattr(pivot, 'map', None) or pivot.applymap
-                st.dataframe(_map(fmt_fn), use_container_width=True, height=500)
-    else:
-        st.info('Нет данных о расходах')
-
-    st.markdown('**Доходы: категория × студия**')
-    if not rev_f.empty:
-        rev_f2 = rev_f.copy()
-        rev_f2['category_name'] = rev_f2['category_code'].map(
-            lambda x: REVENUE_CATEGORIES.get(int(x), f'Кат. {x}') if pd.notna(x) else 'Без категории'
-        )
-        rev_f2['studio_name'] = rev_f2['studio'].map(lambda x: STUDIO_CODES.get(x, x))
-        pivot2 = rev_f2.pivot_table(
-            index='category_name', columns='studio_name',
-            values='amount', aggfunc='sum', fill_value=0,
-        )
-        pivot2['ИТОГО'] = pivot2.sum(axis=1)
-        fmt_fn2 = lambda x: f'{x:,.0f}'.replace(',', ' ')
-        try:
-            styled2 = pivot2.style.format(fmt_fn2).background_gradient(cmap='Greens')
-            st.dataframe(styled2, use_container_width=True)
-        except Exception:
-            _map2 = getattr(pivot2, 'map', None) or pivot2.applymap
-            st.dataframe(_map2(fmt_fn2), use_container_width=True)
+                st.dataframe(pivot2.applymap(fmt_fn2), use_container_width=True, height=500)
+        else:
+            st.info('Нет данных')
