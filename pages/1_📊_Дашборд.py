@@ -21,6 +21,9 @@ st.markdown("""
 .kpi-card {
     border-radius: 14px; padding: 20px 16px; text-align: center;
     box-shadow: 0 3px 12px rgba(0,0,0,.09); margin-bottom: 4px;
+    min-height: 110px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
 }
 .kpi-label { font-size: 11px; font-weight: 700; letter-spacing: .7px;
              text-transform: uppercase; margin: 0 0 8px; opacity: .82; }
