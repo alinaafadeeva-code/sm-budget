@@ -13,11 +13,15 @@ SH_EXPENSES   = 'expenses'
 SH_REVENUE    = 'revenue'
 SH_SALARIES   = 'salaries'
 SH_OCCUPANCY  = 'occupancy'
+SH_BUDGET     = 'budget'
 
 EXPENSE_HEADERS  = ['date','year','month','entity','studio','category_code','amount','description','type']
 REVENUE_HEADERS  = ['year','month','entity','studio','category_code','amount']
 SALARY_HEADERS   = ['year','month','entity','studio','category_code','amount']
 OCCUPANCY_HEADERS= ['year','month','studio','visits']
+# Бюджет/план: строки — P&L-метрики, без разбивки по студиям
+# line: revenue | salary | expenses | below_line | mgmt
+BUDGET_HEADERS   = ['year','month','line','amount']
 
 
 @st.cache_resource
@@ -217,3 +221,31 @@ def get_occupancy_dict(year: int, month: int) -> dict:
 def clear_caches():
     """Оставлено для обратной совместимости — кэш убран, функция ничего не делает."""
     pass
+
+
+# ─── Бюджет/план ──────────────────────────────────────────────────────────────
+
+def save_budget(year: int, records: list):
+    """Сохраняет план на год, заменяя старые записи за тот же год."""
+    ws = _get_or_create_sheet(SH_BUDGET, BUDGET_HEADERS)
+    df = _sheet_to_df(SH_BUDGET, BUDGET_HEADERS)
+    if not df.empty:
+        mask = df['year'].astype(str) == str(year)
+        if mask.any():
+            ws.clear()
+            ws.append_row(BUDGET_HEADERS)
+            keep = df[~mask]
+            if not keep.empty:
+                ws.append_rows(keep.values.tolist(), value_input_option='RAW')
+    rows = [[r.get(h, '') for h in BUDGET_HEADERS] for r in records]
+    ws.append_rows(rows, value_input_option='RAW')
+
+
+def load_budget() -> pd.DataFrame:
+    df = _sheet_to_df(SH_BUDGET, BUDGET_HEADERS)
+    if df.empty:
+        return df
+    df['amount'] = pd.to_numeric(df['amount'], errors='coerce').fillna(0)
+    df['year']   = pd.to_numeric(df['year'],   errors='coerce').fillna(0).astype(int)
+    df['month']  = pd.to_numeric(df['month'],  errors='coerce').fillna(0).astype(int)
+    return df

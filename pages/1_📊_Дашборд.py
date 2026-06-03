@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from utils.sheets import load_expenses, load_revenue, load_salaries
+from utils.sheets import load_expenses, load_revenue, load_salaries, load_budget
 from utils.mappings import (
     STUDIO_CODES, ENTITY_NAMES, ENTITY_STUDIOS,
     ALL_EXPENSE_CATEGORIES, REVENUE_CATEGORIES,
@@ -68,9 +68,10 @@ def kpi_card(label, value, sub=None, bg='#1E3A5F', fg='#FFFFFF'):
 
 
 # ── Загрузка данных ────────────────────────────────────────────────────────────
-exp_df = load_expenses()
-rev_df = load_revenue()
-sal_df = load_salaries()
+exp_df    = load_expenses()
+rev_df    = load_revenue()
+sal_df    = load_salaries()
+budget_df = load_budget()
 
 # Ремаппинг категорий для данных января–мая 2026
 _CAT_MAP_JAN_MAY_2026 = {
@@ -327,7 +328,7 @@ st.divider()
 # ══════════════════════════════════════════════════════════════════════════════
 # ВКЛАДКИ
 # ══════════════════════════════════════════════════════════════════════════════
-tab1, tab2, tab3, tab4 = st.tabs(['📍 По студиям', '📋 По статьям', '📈 Динамика', '🗂 Сводная'])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(['📍 По студиям', '📋 По статьям', '📈 Динамика', '🗂 Сводная', '🎯 План/Факт'])
 
 # ══ Вкладка 1: По студиям ══════════════════════════════════════════════════════
 with tab1:
@@ -433,6 +434,34 @@ with tab2:
             xaxis_title='',
         )
         st.plotly_chart(fig_cat, use_container_width=True)
+
+        # ── Дрилл-даун по статье ──────────────────────────────────────────────
+        st.divider()
+        st.markdown('**🔍 Детализация по статье**')
+        cats_available = sorted(cat_sum['cat'].tolist(), reverse=True)
+        selected_cat = st.selectbox(
+            'Выбери статью для детализации', ['— не выбрано —'] + cats_available,
+            key=f'drill_cat_{year}_{month}',
+        )
+        if selected_cat != '— не выбрано —' and not all_exp_show.empty:
+            detail = all_exp_show[all_exp_show['cat'] == selected_cat].copy()
+            if not detail.empty:
+                detail['studio_name'] = detail['studio'].map(
+                    lambda s: STUDIO_CODES.get(s, s) if s else 'Общие'
+                )
+                detail_display = detail[['date', 'studio_name', 'amount', 'description']].copy()
+                detail_display = detail_display.sort_values('amount', ascending=False)
+                detail_display.columns = ['Дата', 'Студия', 'Сумма, ₽', 'Описание платежа']
+                detail_display['Сумма, ₽'] = detail_display['Сумма, ₽'].apply(
+                    lambda x: f'{x:,.0f}'.replace(',', ' ')
+                )
+
+                total_cat = detail['amount'].sum()
+                count_cat = len(detail)
+                st.caption(f'**{selected_cat}** — {count_cat} платежей на сумму **{fmt(total_cat)}**')
+                st.dataframe(detail_display, hide_index=True, use_container_width=True)
+            else:
+                st.info('Данных нет (статья может быть эквайрингом — авторасчёт).')
     else:
         st.info('Нет данных о расходах')
 
@@ -524,6 +553,258 @@ with tab3:
         margin=dict(t=50),
     )
     st.plotly_chart(fig_ytd, use_container_width=True)
+
+
+# ══ Вкладка 5: План / Факт ════════════════════════════════════════════════════
+with tab5:
+    if budget_df.empty:
+        st.info('📋 План не введён. Перейди на страницу **🎯 Бюджет** и заполни плановые показатели.')
+        st.stop()
+
+    # Получаем план за выбранный период
+    def get_plan(line):
+        if budget_df.empty:
+            return 0.0
+        mask = (
+            (budget_df['year']  == year) &
+            (budget_df['month'].isin(months_range)) &
+            (budget_df['line']  == line)
+        )
+        return float(budget_df[mask]['amount'].sum())
+
+    plan_rev    = get_plan('revenue')
+    plan_sal    = get_plan('salary')
+    plan_exp    = get_plan('expenses')
+    plan_below  = get_plan('below_line')
+    plan_mgmt   = get_plan('mgmt')
+    plan_total_exp = plan_sal + plan_exp + plan_below + plan_mgmt
+    plan_profit = plan_rev - plan_total_exp
+
+    # Факт (уже рассчитан выше)
+    fact_rev   = total_revenue
+    fact_sal   = total_sal
+    fact_exp   = total_oper_exp_raw
+    fact_below = below_total
+    fact_mgmt  = float(mgmt_expenses)
+    fact_profit = final_result
+
+    def var(fact, plan, invert=False):
+        """Отклонение: + хорошо, - плохо. invert=True для расходов."""
+        if plan == 0:
+            return None, None
+        delta = fact - plan
+        if invert:
+            delta = -delta  # перерасход = отрицательное отклонение
+        pct = delta / plan * 100
+        return delta, pct
+
+    def status(pct, invert=False):
+        if pct is None:
+            return '—'
+        if pct >= -3:
+            return '✅'
+        if pct >= -10:
+            return '🟡'
+        return '🔴'
+
+    # ── Сводная таблица план/факт ──────────────────────────────────────────────
+    st.markdown(f'### План vs Факт — {period_label} {year}')
+
+    rows_pnl = []
+    items = [
+        ('💚 Выручка',              fact_rev,   plan_rev,   False),
+        ('👥 ФОТ',                  fact_sal,   plan_sal,   True),
+        ('🔴 Операц. расходы',      fact_exp,   plan_exp,   True),
+        ('💸 Налоги и фин.',        fact_below, plan_below, True),
+        ('👔 Расходы руководителей',fact_mgmt,  plan_mgmt,  True),
+        ('✅ Итог к распределению', fact_profit,plan_profit,False),
+    ]
+    for label, fact, plan, invert in items:
+        delta, pct = var(fact, plan, invert)
+        rows_pnl.append({
+            'Показатель': label,
+            'План':       fmt(plan) if plan else '—',
+            'Факт':       fmt(fact),
+            'Откл. ₽':   ('+' if (delta or 0) >= 0 else '') + fmt(delta) if delta is not None else '—',
+            'Откл. %':   ('+' if (pct or 0) >= 0 else '') + f'{pct:.1f}%' if pct is not None else '—',
+            'Статус':     status(pct, invert) if pct is not None else '—',
+        })
+
+    df_pnl = pd.DataFrame(rows_pnl)
+
+    def highlight_status(row):
+        s = row['Статус']
+        if s == '🔴':
+            return ['background-color: #FEE2E2'] * len(row)
+        if s == '🟡':
+            return ['background-color: #FEF9C3'] * len(row)
+        if s == '✅':
+            return ['background-color: #DCFCE7'] * len(row)
+        return [''] * len(row)
+
+    styled_pnl = df_pnl.style.apply(highlight_status, axis=1)
+    st.dataframe(styled_pnl, hide_index=True, use_container_width=True)
+
+    # ── Умные рекомендации ─────────────────────────────────────────────────────
+    st.divider()
+    st.markdown('### 🤖 Автоанализ — на что обратить внимание')
+
+    alerts = []
+
+    # Выручка
+    if plan_rev > 0:
+        _, pct_rev = var(fact_rev, plan_rev, invert=False)
+        if pct_rev is not None and pct_rev < -10:
+            alerts.append(('🔴', f'Выручка ниже плана на **{abs(pct_rev):.1f}%** '
+                           f'({fmt(plan_rev - fact_rev)} недобор). '
+                           'Проверить заполняемость и причины оттока клиентов.'))
+        elif pct_rev is not None and pct_rev < -3:
+            alerts.append(('🟡', f'Выручка незначительно ниже плана на **{abs(pct_rev):.1f}%**. '
+                           'Следить за динамикой.'))
+
+    # ФОТ
+    if plan_sal > 0:
+        delta_sal, pct_sal = var(fact_sal, plan_sal, invert=True)
+        if pct_sal is not None and pct_sal < -10:
+            alerts.append(('🔴', f'Перерасход ФОТ на **{abs(pct_sal):.1f}%** '
+                           f'(+{fmt(fact_sal - plan_sal)} сверх плана). '
+                           'Проверить штатное расписание и сверхурочные.'))
+        elif pct_sal is not None and pct_sal < -3:
+            alerts.append(('🟡', f'ФОТ превышает план на **{abs(pct_sal):.1f}%**. '
+                           'Контролировать.'))
+
+    # Операц. расходы
+    if plan_exp > 0:
+        _, pct_exp = var(fact_exp, plan_exp, invert=True)
+        if pct_exp is not None and pct_exp < -10:
+            alerts.append(('🔴', f'Операционные расходы выше плана на **{abs(pct_exp):.1f}%** '
+                           f'(+{fmt(fact_exp - plan_exp)}). '
+                           'Изучить детализацию по статьям во вкладке «По статьям».'))
+        elif pct_exp is not None and pct_exp < -3:
+            alerts.append(('🟡', f'Операционные расходы незначительно выше плана (+**{abs(pct_exp):.1f}%**).'))
+
+    # Налоги/финансовые
+    if plan_below > 0:
+        _, pct_bel = var(fact_below, plan_below, invert=True)
+        if pct_bel is not None and pct_bel < -15:
+            alerts.append(('🔴', f'Налоги и финансовые расходы выше плана на **{abs(pct_bel):.1f}%**. '
+                           'Уточнить у бухгалтера.'))
+
+    # Прибыль
+    if plan_profit > 0:
+        _, pct_pr = var(fact_profit, plan_profit, invert=False)
+        if pct_pr is not None and pct_pr >= 5:
+            alerts.append(('✅', f'Прибыль превышает план на **{pct_pr:.1f}%** (+{fmt(fact_profit - plan_profit)}). '
+                           'Хороший результат!'))
+        elif pct_pr is not None and pct_pr < -15:
+            alerts.append(('🔴', f'Прибыль ниже плана на **{abs(pct_pr):.1f}%** '
+                           f'({fmt(plan_profit - fact_profit)} недополучено). '
+                           'Требует срочного разбора.'))
+
+    # Маржа
+    if fact_rev > 0 and plan_rev > 0:
+        fact_m = fact_profit / fact_rev * 100
+        plan_m = plan_profit / plan_rev * 100
+        if plan_m > 0 and (fact_m - plan_m) < -5:
+            alerts.append(('🟡', f'Маржинальность **{fact_m:.1f}%** vs плановая **{plan_m:.1f}%** '
+                           f'— снижение на {plan_m - fact_m:.1f} п.п. '
+                           'Растут расходы или падает выручка.'))
+
+    if not alerts:
+        alerts.append(('✅', 'Все показатели в пределах плановых значений. Продолжай в том же духе!'))
+
+    for icon, text in alerts:
+        if icon == '🔴':
+            st.error(f'{icon} {text}')
+        elif icon == '🟡':
+            st.warning(f'{icon} {text}')
+        else:
+            st.success(f'{icon} {text}')
+
+    # ── Помесячная динамика план vs факт ──────────────────────────────────────
+    if not budget_df.empty:
+        st.divider()
+        st.markdown('**Помесячно: выручка и прибыль — план vs факт**')
+
+        months_data = []
+        for m in range(1, 13):
+            # Факт
+            def get_fact_month(df, m_val):
+                if df is None or df.empty:
+                    return 0.0
+                mask = (df['year'] == year) & (df['month'] == m_val)
+                if studio_filter != 'Все':
+                    mask &= df['studio'] == studio_filter
+                if entity_filter != 'Все':
+                    mask &= df['entity'] == entity_filter
+                return float(df[mask]['amount'].sum())
+
+            f_rev  = get_fact_month(rev_df, m)
+            f_sal  = get_fact_month(sal_df, m)
+            f_exp_raw = 0.0
+            if not exp_df.empty:
+                mask_e = (
+                    (exp_df['year'] == year) & (exp_df['month'] == m) &
+                    ~exp_df['category_code'].isin(FULLY_EXCLUDED | BELOW_LINE_CATS)
+                )
+                if studio_filter != 'Все': mask_e &= exp_df['studio'] == studio_filter
+                if entity_filter != 'Все': mask_e &= exp_df['entity'] == entity_filter
+                f_exp_raw = float(exp_df[mask_e]['amount'].sum())
+            f_acq  = f_rev * ACQUIRING_RATE
+            f_bel  = 0.0
+            if not exp_df.empty:
+                mask_b = (
+                    (exp_df['year'] == year) & (exp_df['month'] == m) &
+                    exp_df['category_code'].isin(BELOW_LINE_CATS)
+                )
+                if studio_filter != 'Все': mask_b &= exp_df['studio'] == studio_filter
+                if entity_filter != 'Все': mask_b &= exp_df['entity'] == entity_filter
+                f_bel = float(exp_df[mask_b]['amount'].sum())
+            f_profit = f_rev - f_sal - f_exp_raw - f_acq - f_bel
+
+            # План
+            def get_plan_month(line, m_val):
+                if budget_df.empty:
+                    return 0.0
+                mask = (budget_df['year'] == year) & (budget_df['month'] == m_val) & (budget_df['line'] == line)
+                return float(budget_df[mask]['amount'].sum())
+
+            p_rev    = get_plan_month('revenue', m)
+            p_sal    = get_plan_month('salary', m)
+            p_exp    = get_plan_month('expenses', m)
+            p_below  = get_plan_month('below_line', m)
+            p_mgmt   = get_plan_month('mgmt', m)
+            p_profit = p_rev - p_sal - p_exp - p_below - p_mgmt
+
+            months_data.append({
+                'Месяц': MONTHS_RU[m],
+                'Выручка факт': f_rev, 'Выручка план': p_rev,
+                'Прибыль факт': f_profit, 'Прибыль план': p_profit,
+            })
+
+        md = pd.DataFrame(months_data)
+        md_has_data = md[['Выручка факт', 'Выручка план']].sum().sum() > 0
+
+        if md_has_data:
+            fig_pf = go.Figure()
+            fig_pf.add_bar(name='Выручка план', x=md['Месяц'], y=md['Выручка план'],
+                           marker_color='rgba(16,185,129,.25)', marker_line_color='#10B981',
+                           marker_line_width=1.5)
+            fig_pf.add_scatter(name='Выручка факт', x=md['Месяц'], y=md['Выручка факт'],
+                               mode='lines+markers', line=dict(color='#10B981', width=3),
+                               marker=dict(size=8))
+            fig_pf.add_bar(name='Прибыль план', x=md['Месяц'], y=md['Прибыль план'],
+                           marker_color='rgba(59,130,246,.2)', marker_line_color='#3B82F6',
+                           marker_line_width=1.5)
+            fig_pf.add_scatter(name='Прибыль факт', x=md['Месяц'], y=md['Прибыль план'],
+                               mode='lines+markers', line=dict(color='#3B82F6', width=2, dash='dot'),
+                               marker=dict(size=6))
+            fig_pf.update_layout(
+                barmode='group', height=380,
+                hovermode='x unified', xaxis_title='',
+                legend=dict(orientation='h', yanchor='bottom', y=1.02),
+            )
+            st.plotly_chart(fig_pf, use_container_width=True)
 
 
 # ══ Вкладка 4: Сводная ════════════════════════════════════════════════════════
