@@ -136,14 +136,20 @@ def _detect_format(df: pd.DataFrame) -> dict:
         # Короткий формат: №, Дата, Сумма, Инфо, Назначение, Студия, Статья
         return {'header_row': None, 'col_date': 1, 'col_amount': 2,
                 'col_desc': 4, 'col_studio': 5, 'col_cat': 6}
-    elif ncols == 8:
-        # Расширенный формат: №, Дата, Тип_документа, Номер, Сумма, Описание, Студия, Статья
+    elif ncols <= 9:
+        # Расширенный формат 8–9 колонок:
+        # №, Дата, Тип_документа, Номер, Сумма, Описание, Студия, Статья [, доп.]
+        # Студия и статья — всегда предпоследняя и последняя из значимых колонок
         return {'header_row': None, 'col_date': 1, 'col_amount': 4,
-                'col_desc': 5, 'col_studio': 6, 'col_cat': 7}
-    else:
+                'col_desc': 5, 'col_studio': ncols - 2, 'col_cat': ncols - 1}
+    elif ncols >= 13:
         # Банковский формат (13+ колонок)
         return {'header_row': None, 'col_date': 1, 'col_amount': 4,
                 'col_desc': 6, 'col_studio': 11, 'col_cat': 12}
+    else:
+        # Промежуточный формат 10–12 колонок: студия и статья в хвосте
+        return {'header_row': None, 'col_date': 1, 'col_amount': 4,
+                'col_desc': 5, 'col_studio': ncols - 2, 'col_cat': ncols - 1}
 
 
 def process_registry(file_obj, entity: str) -> list[dict]:
