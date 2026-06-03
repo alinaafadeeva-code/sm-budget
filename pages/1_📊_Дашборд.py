@@ -194,7 +194,7 @@ with c2:
     fg_color     = '#1E40AF' if oper_profit >= 0 else '#991B1B'
     st.markdown(kpi_card(
         '🏆 ОПЕРАЦ. ПРИБЫЛЬ', fmt(oper_profit),
-        sub=f'маржа {fmt_pct(oper_margin, 1)}' if total_revenue else None,
+        sub=f'маржа {oper_margin:.1f}%' if total_revenue else None,
         bg=bg_color, fg=fg_color,
     ), unsafe_allow_html=True)
 
