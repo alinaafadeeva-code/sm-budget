@@ -9,11 +9,12 @@ SCOPES = [
 ]
 
 # Названия листов в Google Sheets
-SH_EXPENSES   = 'expenses'
-SH_REVENUE    = 'revenue'
-SH_SALARIES   = 'salaries'
-SH_OCCUPANCY  = 'occupancy'
-SH_BUDGET     = 'budget'
+SH_EXPENSES       = 'expenses'
+SH_REVENUE        = 'revenue'
+SH_SALARIES       = 'salaries'
+SH_OCCUPANCY      = 'occupancy'
+SH_BUDGET         = 'budget'
+SH_SALARY_DETAILS = 'salary_details'
 
 EXPENSE_HEADERS  = ['date','year','month','entity','studio','category_code','amount','description','type']
 REVENUE_HEADERS  = ['year','month','entity','studio','category_code','amount']
@@ -21,7 +22,9 @@ SALARY_HEADERS   = ['year','month','entity','studio','category_code','amount']
 OCCUPANCY_HEADERS= ['year','month','studio','visits']
 # Бюджет/план: строки — P&L-метрики, без разбивки по студиям
 # line: revenue | salary | expenses | below_line | mgmt
-BUDGET_HEADERS   = ['year','month','line','amount']
+BUDGET_HEADERS          = ['year','month','line','amount']
+SALARY_DETAIL_HEADERS   = ['year','month','pay_date','department','name',
+                            'base_salary','additional','amount','notes']
 
 
 @st.cache_resource
@@ -244,6 +247,37 @@ def save_budget(year: int, records: list):
                 ws.append_rows(keep.values.tolist(), value_input_option='RAW')
     rows = [[r.get(h, '') for h in BUDGET_HEADERS] for r in records]
     ws.append_rows(rows, value_input_option='RAW')
+
+
+def save_salary_details(records: list, year: int, month: int):
+    """Сохраняет детализацию зарплат, заменяя данные за тот же год+месяц."""
+    ws = _get_or_create_sheet(SH_SALARY_DETAILS, SALARY_DETAIL_HEADERS)
+    df = _sheet_to_df(SH_SALARY_DETAILS, SALARY_DETAIL_HEADERS)
+    if not df.empty:
+        mask = (df['year'].astype(str) == str(year)) & (df['month'].astype(str) == str(month))
+        if mask.any():
+            keep = df[~mask]
+            new_rows = [[r.get(h, '') for h in SALARY_DETAIL_HEADERS] for r in records]
+            all_rows = (keep.values.tolist() if not keep.empty else []) + new_rows
+            ws.clear()
+            ws.append_row(SALARY_DETAIL_HEADERS)
+            if all_rows:
+                ws.append_rows(all_rows, value_input_option='RAW')
+            return
+    rows = [[r.get(h, '') for h in SALARY_DETAIL_HEADERS] for r in records]
+    ws.append_rows(rows, value_input_option='RAW')
+
+
+def load_salary_details() -> pd.DataFrame:
+    df = _sheet_to_df(SH_SALARY_DETAILS, SALARY_DETAIL_HEADERS)
+    if df.empty:
+        return df
+    df['amount']      = pd.to_numeric(df['amount'],      errors='coerce').fillna(0)
+    df['base_salary'] = pd.to_numeric(df['base_salary'], errors='coerce').fillna(0)
+    df['additional']  = pd.to_numeric(df['additional'],  errors='coerce').fillna(0)
+    df['year']        = pd.to_numeric(df['year'],  errors='coerce').fillna(0).astype(int)
+    df['month']       = pd.to_numeric(df['month'], errors='coerce').fillna(0).astype(int)
+    return df
 
 
 def load_budget() -> pd.DataFrame:
