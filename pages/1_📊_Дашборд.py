@@ -14,6 +14,12 @@ from utils.mappings import (
 from utils.ui import sidebar_period
 
 st.set_page_config(page_title='Дашборд', page_icon='📊', layout='wide')
+from utils.auth import check_password, show_logout_button
+
+if not check_password():
+    st.stop()
+show_logout_button()
+
 
 # ── CSS ────────────────────────────────────────────────────────────────────────
 st.markdown("""

@@ -4,6 +4,12 @@ from PIL import Image
 _icon = Image.open('assets/logo.png')
 
 st.set_page_config(
+from utils.auth import check_password, show_logout_button
+
+if not check_password():
+    st.stop()
+show_logout_button()
+
     page_title='SMSTRETCHING — Бюджет',
     page_icon=_icon,
     layout='wide',

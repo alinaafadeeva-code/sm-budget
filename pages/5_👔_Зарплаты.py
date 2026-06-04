@@ -13,6 +13,12 @@ from utils.ui import sidebar_period
 import pandas as pd
 
 st.set_page_config(page_title='Зарплаты', page_icon='👔', layout='wide')
+from utils.auth import check_password, show_logout_button
+
+if not check_password():
+    st.stop()
+show_logout_button()
+
 st.title('👔 Зарплаты')
 st.markdown('Вноси данные **раз в месяц** после его завершения.')
 

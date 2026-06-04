@@ -8,6 +8,12 @@ from utils.mappings import MONTHS_RU
 from utils.ui import sidebar_period
 
 st.set_page_config(page_title='Бюджет / План', page_icon='🎯', layout='wide')
+from utils.auth import check_password, show_logout_button
+
+if not check_password():
+    st.stop()
+show_logout_button()
+
 st.title('🎯 Бюджет / План')
 st.caption('Вводи плановые показатели по месяцам — без разбивки по студиям. '
            'Дашборд будет сравнивать факт с планом и подсвечивать отклонения.')

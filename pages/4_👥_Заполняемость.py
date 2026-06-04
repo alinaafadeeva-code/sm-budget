@@ -9,6 +9,12 @@ from utils.ui import sidebar_period
 import pandas as pd
 
 st.set_page_config(page_title='Заполняемость', page_icon='👥', layout='wide')
+from utils.auth import check_password, show_logout_button
+
+if not check_password():
+    st.stop()
+show_logout_button()
+
 st.title('👥 Заполняемость студий')
 st.markdown('Вводи данные **1–2 числа** нового месяца. После сохранения общие расходы прошлого месяца будут автоматически разнесены по студиям.')
 

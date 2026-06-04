@@ -8,6 +8,12 @@ from utils.sheets import save_expenses, get_occupancy_dict, clear_caches
 from utils.mappings import ENTITY_NAMES, STUDIO_CODES, MONTHS_RU, ALL_EXPENSE_CATEGORIES
 
 st.set_page_config(page_title='Загрузить реестр', page_icon='📤', layout='wide')
+from utils.auth import check_password, show_logout_button
+
+if not check_password():
+    st.stop()
+show_logout_button()
+
 st.title('📤 Загрузить реестр платежей')
 
 uploaded = st.file_uploader(
